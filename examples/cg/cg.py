@@ -22,16 +22,24 @@ def fit(A, b, tol, max_iter):
     # Note that this function works even tensors 'A' and 'b' are NumPy or CuPy
     # arrays.
     xp = cupy.get_array_module(A)
+
+    if xp is np:
+        def dots(x, y):
+            return np.einsum('ij,ij->j', x, y)
+    else:
+        def dots(x, y):
+            return xp.diagonal(x.T.dot(y))
+
     x = xp.zeros_like(b, dtype=np.float64)
     r0 = b - xp.dot(A, x)
     p = r0
     for i in six.moves.range(max_iter):
-        a = xp.dot(r0.T, r0) / xp.dot(xp.dot(p.T, A), p)
+        a = dots(r0, r0) / dots(p, xp.dot(A, p))
         x = x + p * a
-        r1 = r0 - xp.dot(A * a, p)
-        if xp.linalg.norm(r1) < tol:
+        r1 = r0 - xp.dot(A, p) * a
+        if (xp.linalg.norm(r1, axis=0) < tol).all():
             return x
-        b = xp.dot(r1.T, r1) / xp.dot(r0.T, r0)
+        b = dots(r1, r1) / dots(r0, r0)
         p = r1 + b * p
         r0 = r1
     print('Failed to converge. Increase max-iter or tol.')
@@ -52,15 +60,17 @@ def run(gpu_id, tol, max_iter):
         print('Trial: %d' % repeat)
         # Create the large symmetric matrix 'A'.
         N = 2000
+        batchsize = 4
         A = np.random.randint(-50, 50, size=(N, N))
         A = (A + A.T).astype(np.float64)
-        x_ans = np.random.randint(-50, 50, size=N).astype(np.float64)
+        x_ans = np.random.randint(
+            -50, 50, size=(N, batchsize)).astype(np.float64)
         b = np.dot(A, x_ans)
 
         print('Running CPU...')
         with timer(' CPU '):
             x_cpu = fit(A, b, tol, max_iter)
-        print(np.linalg.norm(x_cpu - x_ans))
+        print(np.linalg.norm(x_cpu - x_ans, axis=0))
 
         with cupy.cuda.Device(gpu_id):
             A_gpu = cupy.asarray(A)
@@ -68,7 +78,7 @@ def run(gpu_id, tol, max_iter):
             print('Running GPU...')
             with timer(' GPU '):
                 x_gpu = fit(A_gpu, b_gpu, tol, max_iter)
-            print(np.linalg.norm(cupy.asnumpy(x_gpu) - x_ans))
+            print(np.linalg.norm(cupy.asnumpy(x_gpu) - x_ans, axis=0))
 
         print()
 
