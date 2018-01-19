@@ -238,3 +238,34 @@ class TestFlatNonzero(unittest.TestCase):
     def test_flatnonzero(self, xp, dtype):
         array = xp.array(self.array, dtype=dtype)
         return xp.flatnonzero(array)
+
+
+@testing.parameterize(*testing.product({
+    'a_array': [
+        numpy.sort(numpy.random.rand(0)),
+        numpy.sort(numpy.random.rand(3)),
+        numpy.sort(numpy.random.rand(20)),
+    ],
+    'v_array': [
+        numpy.random.rand(),
+        numpy.random.rand(0),
+        numpy.random.rand(5),
+        numpy.random.rand(4, 3),
+        numpy.random.rand(2, 0),
+        numpy.random.rand(0, 3),
+    ],
+    'side': ['left', 'right'],
+}))
+@testing.gpu
+class TestSearchsorted(unittest.TestCase):
+    @testing.numpy_cupy_array_equal()
+    def test_int32(self, xp):
+        a = xp.array(10. * self.a_array).astype(numpy.int32)
+        v = xp.array(10. * self.v_array).astype(numpy.int32)
+        return xp.searchsorted(a, v, side=self.side)
+
+    @testing.numpy_cupy_array_equal()
+    def test_float32(self, xp):
+        a = xp.array(self.a_array).astype(numpy.float32)
+        v = xp.array(self.v_array).astype(numpy.float32)
+        return xp.searchsorted(a, v, side=self.side)

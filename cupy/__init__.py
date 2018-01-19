@@ -441,6 +441,7 @@ pad = padding.pad.pad
 from cupy.sorting.count import count_nonzero  # NOQA
 from cupy.sorting.search import flatnonzero  # NOQA
 from cupy.sorting.search import nonzero  # NOQA
+from cupy.sorting.search import searchsorted  # NOQA
 
 from cupy.core.fusion import where  # NOQA
 from cupy.sorting.search import argmax  # NOQA

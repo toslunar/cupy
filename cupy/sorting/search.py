@@ -1,4 +1,6 @@
 from cupy import core
+from cupy.manipulation import join
+from cupy.sorting import sort
 
 
 def argmax(a, axis=None, dtype=None, out=None, keepdims=False):
@@ -133,7 +135,24 @@ _where_ufunc = core.create_ufunc(
     'out0 = in0 ? in1 : in2')
 
 
-# TODO(okuta): Implement searchsorted
+def _rank(a):
+    return sort.argsort(sort.argsort(a))  # argsort is stable in CuPy
+
+
+def searchsorted(a, v, side='left'):
+    out_shape = v.shape
+    v = v.ravel()
+    v_ranks = _rank(v)
+    if side[0] in ['l', 'L']:  # left
+        b = join.concatenate([v, a])
+        ranks = _rank(b)[:len(v)]
+    elif side[0] in ['r', 'R']:  # right
+        b = join.concatenate([a, v])
+        ranks = _rank(b)[len(a):]
+    else:
+        raise ValueError(
+            "{} is an invalid value for keyword 'side'".format(repr(side)))
+    return (ranks - v_ranks).reshape(out_shape)
 
 
 # TODO(okuta): Implement extract
