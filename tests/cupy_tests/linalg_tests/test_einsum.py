@@ -8,7 +8,7 @@ from cupy import testing
 
 def product_dict(*parameters):  # from chainer.testing
     return [
-        {k: v for dic in dicts for k, v in six.iteritems(dic)}
+        {k: v for dic in dicts for k, v in dic.items()}
         for dicts in itertools.product(*parameters)]
 
 
