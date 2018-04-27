@@ -1,6 +1,7 @@
 import unittest
 
 import numpy
+from chainer.testing import product_dict
 
 from cupy import testing
 
@@ -141,7 +142,7 @@ class TestEinSumError(unittest.TestCase):
 
 
 @testing.parameterize(
-*testing.product_dict(testing.product(
+*product_dict(testing.product(
     {'shape_dec': [0, 1, 2], 'shape_drop': [0, 0.2, 0.8]}
 ), [
     {'shape_a': (2, 3), 'subscripts': 'ij'},  # do nothing
@@ -206,7 +207,7 @@ class TestEinSumUnaryOperation(unittest.TestCase):
 
 
 @testing.parameterize(
-*testing.product_dict(testing.product(
+*product_dict(testing.product(
     {'shape_dec': [0, 1, 2], 'shape_drop': [0, 0.2, 0.8]}
 ), [
     # outer
@@ -294,7 +295,7 @@ class TestEinSumBinaryOperationWithScalar(unittest.TestCase):
 
 
 @testing.parameterize(
-*testing.product_dict(testing.product(
+*product_dict(testing.product(
     {
         'shape_dec': [0, 1, 2], 'shape_drop': [0, 0.2, 0.8],
         'dtype_map': [(0, 0, 1), (0, 1, 0), (1, 0, 0)],
@@ -343,4 +344,4 @@ class TestEinSumTernaryOperation(unittest.TestCase):
         return xp.einsum(self.subscripts, a, b, c, optimize=self.optimize)
 
 
-testing.run_module(__name__, __file__)
+# testing.run_module(__name__, __file__)

@@ -2,9 +2,9 @@ import functools
 import itertools
 import operator
 
-import xp
+import cupy as xp
 
-from einsum_opt import _greedy_path, _optimal_path
+from cupy.linalg.einsum_opt import _greedy_path, _optimal_path
 
 
 options = {
@@ -47,7 +47,7 @@ def _transpose_ex(a, axeses):
         )
         shape.append(dim)
         strides.append(stride)
-    return xp.set_shape_and_strides(a.view(), shape, strides)
+    return a.view()._set_shape_and_strides(shape, strides)
 
 
 def _parse_int_subscript(sub):
