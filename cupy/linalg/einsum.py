@@ -1,349 +1,464 @@
-import collections
-import re
-import string
+import functools
+import itertools
+import operator
 
-import numpy
-import six
+import xp
 
-import cupy
-
-
-def calc_single_view(ioperand, subscript):
-    """Calculates 'ii->i' by cupy.diagonal if needed.
-
-    Args:
-        ioperand (cupy.ndarray): Array to be calculated diagonal.
-        subscript (str):
-            Specifies the subscripts. If the same label appears
-            more than once, calculate diagonal for those axes.
-    """
-
-    if '@' in subscript:
-        assert subscript.count('@') == 1
-        assert ioperand.ndim >= len(subscript) - 1
-    else:
-        assert ioperand.ndim == len(subscript)
-
-    subscripts_excluded_at = subscript.replace('@', '')
-    labels = set(subscripts_excluded_at)
-    label_to_axis = collections.defaultdict(list)
-    for i, label in enumerate(subscript):
-        label_to_axis[label].append(i)
-
-    result = ioperand
-    count_dict = collections.Counter(subscript)
-    ellipsis_pos = subscript.find('@')
-
-    for label in labels:
-        if count_dict[label] == 1:
-            continue
-        axes_to_diag = []
-        for i, char in enumerate(subscripts_excluded_at):
-            if char == label:
-                if ellipsis_pos == -1 or i < ellipsis_pos:
-                    axes_to_diag.append(i)
-                else:
-                    axes_to_diag.append(i - len(subscripts_excluded_at))
-        axes_to_diag = cupy.core.normalize_axis_tuple(axes_to_diag,
-                                                      result.ndim)
-        for axis in reversed(axes_to_diag[1:]):
-            shape_a = result.shape[axis]
-            shape_b = result.shape[axes_to_diag[0]]
-            if shape_a != shape_b:
-                raise ValueError('dimensions in operand 0 for collapsing'
-                                 ' index \'{0}\' don\'t match'
-                                 ' ({1} != {2})'.format(label, shape_a,
-                                                        shape_b))
-            result = result.diagonal(0, axis, axes_to_diag[0])
-            result = cupy.rollaxis(result, -1, axes_to_diag[0])
-            if ellipsis_pos != -1 and axis > ellipsis_pos:
-                axis -= result.ndim - len(subscript) + 1
-            subscript = subscript[:axis] + subscript[axis + 1:]
-            subscripts_excluded_at = subscript.replace('@', '')
-    return result, subscript
+from einsum_opt import _greedy_path, _optimal_path
 
 
-def calc_summed_view(ioperand, input_subscript, output_subscript):
-    """Calculates 'i->' by cupy.sum if needed.
+options = {
+    'sum_ellipsis': False,
+    'broadcast_diagonal': False,
+}
+
+
+einsum_symbols = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+
+
+def _concat(lists):
+    return sum(lists, [])
+
+
+def _prod(xs):
+    return functools.reduce(operator.mul, xs, 1)
+
+
+def _transpose_ex(a, axeses):
+    """Transpose and diagonal
 
     Args:
-        ioperand (cupy.ndarray): Array to be summed.
-        input_subscript (str): Specifies the subscripts for input array.
-        output_subscript (str):
-            Specifies the subscripts for output array. If one label exists in
-            input_subscript but not in output_subscript, this label will be
-            summed.
-    """
-
-    assert len(set(input_subscript)) == len(input_subscript)
-    assert len(set(output_subscript)) == len(output_subscript)
-    assert set(output_subscript).issubset(set(input_subscript))
-
-    input_subscript_excluded_at = input_subscript.replace('@', '')
-
-    label_to_summed = set(input_subscript_excluded_at) - set(output_subscript)
-    axes_to_summed = []
-    ellipsis_pos = input_subscript.find('@')
-    for i, label in enumerate(input_subscript_excluded_at):
-        if label in label_to_summed:
-            if ellipsis_pos == -1 or i < ellipsis_pos:
-                axes_to_summed.append(i)
-            else:
-                axes_to_summed.append(i - len(input_subscript_excluded_at))
-
-    if axes_to_summed:
-        result = ioperand.sum(axis=tuple(axes_to_summed)). \
-            astype(ioperand.dtype)
-    else:
-        result = ioperand
-    for label in label_to_summed:
-        input_subscript = input_subscript.replace(label, '')
-
-    return result, input_subscript
-
-
-def calc_transposed_view(ioperand, input_subscript, output_subscript):
-    """Calculates 'ij->ji' by cupy.transpose if needed.
-
-    Args:
-        ioperand (cupy.ndarray): Array to be transpose.
-        input_subscript (str): Specifies the subscripts for input arrays.
-        output_subscript (str):
-            Specifies the subscripts for output arrays. If input does not
-            match output, ``operand`` is transposed so that it matches.
-    """
-
-    assert len(set(output_subscript)) == len(output_subscript)
-    assert set(input_subscript) == set(output_subscript)
-
-    if input_subscript == output_subscript:
-        return ioperand
-
-    source_axes = []
-    destination_axes = []
-    ellipsis_pos_input = input_subscript.find('@')
-    ellipsis_pos_output = output_subscript.find('@')
-
-    for label_pos_output, label in enumerate(output_subscript):
-        if label == '@':
-            continue
-        if ellipsis_pos_input == -1 or label_pos_output < ellipsis_pos_output:
-            destination_axes.append(label_pos_output)
-        else:
-            destination_axes.append(label_pos_output - len(output_subscript))
-        label_pos_input = input_subscript.find(label)
-        if ellipsis_pos_input == -1 or label_pos_input < ellipsis_pos_input:
-            source_axes.append(label_pos_input)
-        else:
-            source_axes.append(label_pos_input - len(input_subscript))
-
-    return cupy.moveaxis(ioperand, source_axes, destination_axes)
-
-
-def move_broadcast_axes_to_front(ioperands, subscripts):
-    broadcasted_operands = []
-    broadcasted_subscripts = []
-    for operand, subscript in six.moves.zip(ioperands, subscripts):
-        if '@' in subscript:
-            ellipsis_pos = subscript.find('@')
-            source_axes = list(six.moves.range(ellipsis_pos))
-            destination_axes = [i - ellipsis_pos for i in source_axes]
-            operand = cupy.moveaxis(operand, source_axes, destination_axes)
-            subscript = subscript[ellipsis_pos:] + subscript[:ellipsis_pos]
-        broadcasted_operands.append(operand)
-        broadcasted_subscripts.append(subscript)
-    return broadcasted_operands, broadcasted_subscripts
-
-
-def calc_combined_view(ioperands, subscripts):
-    """Calculates 'i,j->ij' by cupy.tensordot.
-
-    Args:
-        ioperands (sequence of arrays): Arrays to be combined.
-        subscripts (sequence of str): Specifies the subscripts.
-    """
-    if len(ioperands) == 1:
-        return ioperands[0], subscripts[0]
-
-    a_shape_stack = []
-    b_shape_stack = []
-    is_first_operand = True
-    for operand, subscript in six.moves.zip(ioperands, subscripts):
-        if subscript and '@' == subscript[0]:
-            broadcasted_dims = operand.ndim - len(subscript) + 1
-            a_shape = numpy.prod(operand.shape[:broadcasted_dims],
-                                 dtype=numpy.uint32)
-            if len(operand.shape[:broadcasted_dims]) > len(a_shape_stack):
-                a_shape_stack = list(operand.shape[:broadcasted_dims])
-            b_shape = numpy.prod(operand.shape[broadcasted_dims:],
-                                 dtype=numpy.uint32)
-            b_shape_stack += operand.shape[broadcasted_dims:]
-            operand = operand.reshape(a_shape, 1, b_shape)
-        else:
-            b_shape_stack += operand.shape
-            operand = operand.reshape(1, 1, operand.size)
-        if is_first_operand:
-            result = operand
-            is_first_operand = False
-        else:
-            result = cupy.matmul(result, operand)
-        result = result.reshape(result.shape[0],
-                                result.shape[1] * result.shape[2], 1)
-
-    subscript = ''.join(subscripts)
-    if '@' in subscript:
-        subscript = '@' + subscript.replace('@', '')
-    return result.reshape(a_shape_stack + b_shape_stack), subscript
-
-
-def get_dummy_labels(label_list):
-    dummy_label_set = set()
-    count_dict = collections.Counter(label_list)
-    for label, count in six.iteritems(count_dict):
-        if label != '@' and count >= 2:
-            dummy_label_set.add(label)
-    return dummy_label_set
-
-
-def einsum(*operands):
-    """einsum(subscripts, *operands)
-
-    Evaluates the Einstein summation convention on the operands.
-    Using the Einstein summation convention, many common multi-dimensional
-    array operations can be represented in a simple fashion. This function
-    provides a way to compute such summations.
-
-    .. note::
-       Memory contiguity of calculation result is not always compatible with
-       `numpy.einsum`.
-       ``out``, ``order``, ``dtype``, ``casting`` and ``optimize`` options
-       are not supported.
-
-    Args:
-        subscripts (str): Specifies the subscripts for summation.
-        operands (sequence of arrays): These are the arrays for the operation.
+        a
+        axeses (list of list of ints)
 
     Returns:
-        cupy.ndarray:
-            The calculation based on the Einstein summation convention.
-
-    .. seealso:: :func:`numpy.einsum`
-
+        p: a with its axes permutated. A writeable view is returned whenever
+            possible.
     """
 
-    # TODO(fukatani): Support 'out', 'order', 'dtype', 'casting', 'optimize'
+    shape = []
+    strides = []
+    for axes in axeses:
+        dims = [a.shape[axis] for axis in axes]
+        dim = max(dims)  # TODO(kataoka): fix to dim=0
+        stride = sum(
+            0 if d == 1 else a.strides[axis]
+            for axis, d in zip(axes, dims)
+        )
+        shape.append(dim)
+        strides.append(stride)
+    return xp.set_shape_and_strides(a.view(), shape, strides)
 
-    if not operands:
-        raise ValueError('must specify the einstein sum subscripts string and '
-                         'at least one operand, or at least one operand and '
-                         'its corresponding subscripts list')
 
-    subscripts = operands[0]
-    ioperands = operands[1:]
-
-    if not isinstance(subscripts, str):
-        raise TypeError('Current cupy einsum support only string subscripts')
-
-    subscripts = subscripts.replace(' ', '')
-    irregular_chars = set(subscripts) - set(string.ascii_letters) - set('->,.')
-    if irregular_chars:
-        pickup = list(irregular_chars)[0]
-        raise ValueError('invalid subscript \'{}\' in einstein sum subscripts '
-                         'string, subscripts must be letters'.format(pickup))
-
-    converted_inputs = []
-    dtype = numpy.result_type(*ioperands)
-    for a in ioperands:
-        if isinstance(a, cupy.ndarray):
-            converted_inputs.append(a.astype(dtype))
+def _parse_int_subscript(sub):
+    subscripts = ""
+    for s in sub:
+        if s is Ellipsis:
+            subscripts += "@"
+        elif isinstance(s, int):
+            subscripts += einsum_symbols[s]
         else:
-            converted_inputs.append(cupy.asarray(a, dtype=dtype))
+            raise TypeError("For this input type lists must contain "
+                            "either int or Ellipsis")
+    return subscripts
 
-    # For simplicity of implementation of subscripts interpretation,
-    # All '...' is replaced to '@'.
-    subscripts = subscripts.replace('...', '@')
-    if '.' in subscripts:
-        raise ValueError('einstein sum subscripts string contains a \'.\' that'
-                         'is not part of an ellipsis (\'...\')')
 
-    match = re.match('^([a-zA-Z@,]*)(->[a-zA-Z@]*)?$', subscripts)
-    if not match:
-        raise ValueError('einstein sum subscript string does not contain '
-                         'proper \'->\' output specified')
+def _parse_einsum_input(operands, parse_ellipsis=True):
+    """Parse einsum operands.
 
-    input_subscripts = match.group(1)
-    if match.group(2):
-        output_subscript = match.group(2)[2:]
+    This function is based on `numpy.core.einsumfunc._parse_einsum_input`
+    function in NumPy 1.14.
 
-        if output_subscript.count('@') >= 2:
-            raise ValueError(
-                'Two or more \'...\' ellipsis can\'t be used for'
-                'output subscript')
+    Returns
+    -------
+    input_strings : str
+        Parsed input strings
+    output_string : str
+        Parsed output string
+    operands : list of array_like
+        The operands to use in the numpy contraction
 
-        # For compatibility with numpy.
-        # numpy.einsum arrows inputs like 'i->i...'.
-        # In this case, `...` does not affect the einsum results.
-        if '@' not in input_subscripts and '@' in subscripts:
-            output_subscript = output_subscript.replace('@', '')
+    Examples
+    --------
+    The operand list is simplified to reduce printing:
 
-        irregular_chars = set(output_subscript) - set(input_subscripts)
-        if irregular_chars:
-            pickup = list(irregular_chars)[0]
-            raise ValueError('einstein sum subscripts string included output '
-                             'subscript \'{}\' which never appeared in an '
-                             'input'.format(pickup))
+    >>> a = np.random.rand(4, 4)
+    >>> b = np.random.rand(4, 4, 4)
+    >>> _parse_einsum_input(('...a,...a->...', a, b))
+    (['@a, @a'], 'xz', [a, b])
 
-        count_dict = collections.Counter(output_subscript)
-        for key in count_dict:
-            if count_dict[key] == 1:
+    >>> __parse_einsum_input((a, [Ellipsis, 0], b, [Ellipsis, 0]))
+    (['@a, @a'], 'xz', [a, b])
+    """
+
+    if len(operands) == 0:
+        raise ValueError("No input operands")
+
+    if isinstance(operands[0], str):
+        subscripts = operands[0].replace(" ", "")
+        operands = list(operands[1:])
+
+        # Ensure all characters are valid
+        for s in subscripts:
+            if s in '.,->':
                 continue
-            raise ValueError('einstein sum subscripts string includes output '
-                             'subscript \'{}\' multiple times'.format(key))
+            if s not in einsum_symbols:
+                raise ValueError("Character %s is not a valid symbol." % s)
+
+        # Parse "..."
+        subscripts = subscripts.replace("...", "@")
+        if "." in subscripts:
+            raise ValueError("Invalid Ellipses.")
+
+        # Parse "->"
+        if ("-" in subscripts) or (">" in subscripts):
+            # Check for proper "->"
+            invalid = (subscripts.count("-") > 1) or (subscripts.count(">") > 1)
+            subscripts = subscripts.split("->")
+            if invalid or len(subscripts) != 2:
+                raise ValueError("Subscripts can only contain one '->'.")
+            input_subscripts, output_subscript = subscripts
+
+        else:
+            input_subscripts = subscripts
+            output_subscript = None
+
+        input_subscripts = input_subscripts.split(",")
+        if len(input_subscripts) != len(operands):
+            raise ValueError("Number of einsum subscripts must be equal to the "
+                             "number of operands.")
+
     else:
-        label_list = list(input_subscripts.replace(',', ''))
-        out_label_set = set(label_list) - get_dummy_labels(label_list)
-        out_label_list = sorted(list(out_label_set))
-        output_subscript = ''.join(out_label_list)
+        tmp_operands = list(operands)
+        operands = []
+        input_subscripts = []
+        while len(tmp_operands) >= 2:
+            operands.append(tmp_operands.pop(0))
+            input_subscripts.append(_parse_int_subscript(
+                tmp_operands.pop(0)))
+        if tmp_operands:
+            output_subscript = _parse_int_subscript(tmp_operands[0])
+        else:
+            output_subscript = None
 
-    input_subscripts_list = input_subscripts.split(',')
-    if len(input_subscripts_list) < len(converted_inputs):
-        raise ValueError('fewer operands provided to einstein sum function '
-                         'than specified in the subscripts string')
-    if len(input_subscripts_list) > len(converted_inputs):
-        raise ValueError('more operands provided to einstein sum function '
-                         'than specified in the subscripts string')
+    return input_subscripts, output_subscript, operands
 
-    single_views = []
-    for i in six.moves.range(len(input_subscripts_list)):
-        subscript = input_subscripts_list[i]
-        ioperand = converted_inputs[i]
-        if len(subscript) - subscript.count('@') > ioperand.ndim:
-            raise ValueError('einstein sum subscripts string contains too '
-                             'many subscripts for operand {}'.format(i))
-        if '@' not in subscript and len(subscript) < ioperand.ndim:
-            raise ValueError('operand has more dimensions than subscripts'
-                             ' given in einstein sum, but no \'...\' ellipsis'
-                             ' provided to broadcast the extra dimensions.')
-        if subscript.count('@') >= 2:
-            raise ValueError('Two or more \'...\' ellipsis can\'t be used for '
-                             'one operand')
-        if '@' in input_subscripts and '@' not in output_subscript:
-            if len(subscript) <= ioperand.ndim:
-                raise ValueError('output had too few broadcast dimensions')
-            subscript = subscript.replace('@', '')
 
-        result, subscript = calc_single_view(ioperand, subscript)
-        single_views.append((result, subscript))
-
-    if len(converted_inputs) >= 2:
-        results = [view[0] for view in single_views]
-        subscripts = [view[1] for view in single_views]
-        results, subscripts = move_broadcast_axes_to_front(results, subscripts)
-        result, subscript = calc_combined_view(results, subscripts)
-        result, subscript = calc_single_view(result, subscript)
+def _chr(char):
+    if char < 0:
+        return "...[%d]" % char
     else:
-        result, subscript = single_views[0]
+        return chr(char)
 
-    result, subscript = calc_summed_view(result, subscript, output_subscript)
-    result = calc_transposed_view(result, subscript, output_subscript)
-    return result
+
+def _parse_ellipsis_subscript(subscript, ndim=None, ellipsis_len=None):
+    subs = subscript.split('@')
+    if len(subs) == 1:
+        sub, = subs
+        if ndim is not None and len(sub) != ndim:
+            # raise ValueError later
+            return "Einstein sum subscript %s does not contain the correct number of indices " % subs
+        return list(map(ord, sub))
+    elif len(subs) == 2:
+        left_sub, right_sub = subs
+        if ndim is not None:
+            ellipsis_len = ndim - (len(left_sub) + len(right_sub))
+        if ellipsis_len < 0:
+            # raise ValueError later
+            return "Einstein sum subscript %s...%s does not contain the correct number of indices " % (left_sub, right_sub)
+        return list(itertools.chain(
+            map(ord, left_sub),
+            range(-ellipsis_len, 0),
+            map(ord, right_sub),
+        ))
+    else:
+        # >= 2 ellipses for an operand
+        raise ValueError("Invalid Ellipses.")
+
+
+def _einsum_diagonals(input_subscripts, operands):
+    """Compute diagonal for each operand
+
+    This function mutates args.
+    """
+
+    for num, sub in enumerate(input_subscripts):
+        if len(set(sub)) < len(sub):
+            op = operands[num]
+
+            axes = {}
+            for i, s in enumerate(sub):
+                axes.setdefault(s, []).append(i)
+
+            axes = list(axes.items())
+            input_subscripts[num] = [
+                s
+                for s, _ in axes
+            ]
+
+            if not options['broadcast_diagonal']:
+                for s, indices in axes:
+                    dims = list({op.shape[j] for j in indices})
+                    if len(dims) >= 2:
+                        raise ValueError(
+                            "dimensions in operand %d"
+                            " for collapsing index '%s' don't match (%d != %d)"
+                            % (num, _chr(s), dims[0], dims[1])
+                        )
+
+            axes = [
+                indices
+                for _, indices in axes
+            ]
+            operands[num] = _transpose_ex(
+                op, axes
+            )
+
+
+def einsum(*operands, **kwargs):
+    input_subscripts, output_subscript, operands = _parse_einsum_input(operands)
+    assert isinstance(input_subscripts, list)
+    assert isinstance(operands, list)
+
+    dtype = kwargs.pop('dtype', None)
+
+    optimize = kwargs.pop('optimize', False)
+    # assert optimize is False, "optimize: sorry"
+    if optimize is True:
+        optimize = 'greedy'
+    if kwargs:
+        raise TypeError("Did not understand the following kwargs: %s"
+                        % list(kwargs.keys))
+
+    operands = [
+        xp.asanyarray(arr)
+        for arr in operands
+    ]
+    result_dtype = dtype or xp.result_type(*operands)
+
+    input_subscripts = [
+        _parse_ellipsis_subscript(sub, ndim=arr.ndim)
+        for sub, arr in zip(input_subscripts, operands)
+    ]
+    for i, sub_or_err in enumerate(input_subscripts):
+        if isinstance(sub_or_err, str):
+            raise ValueError(sub_or_err + "for operand %d." % i)
+
+    # Get length of each unique dimension and ensure all dimensions are correct
+    dimension_dict = {}
+    for tnum, term in enumerate(input_subscripts):
+        sh = operands[tnum].shape
+        for cnum, char in enumerate(term):
+            dim = sh[cnum]
+            if char in dimension_dict.keys():
+                # For broadcasting cases we always want the largest dim size
+                if dimension_dict[char] == 1:
+                    dimension_dict[char] = dim
+                elif dim not in (1, dimension_dict[char]):
+                    dim_old = dimension_dict[char]
+                    raise ValueError("Size of label '%s' for operand %d (%d) "
+                                     "does not match previous terms (%d)."
+                                     % (_chr(char), tnum, dim, dim_old))
+            else:
+                dimension_dict[char] = dim
+
+    if output_subscript is None:
+        # Build output subscripts
+        tmp_subscripts = _concat(input_subscripts)
+        output_subscript = [
+            s
+            for s in sorted(set(tmp_subscripts))
+            if s < 0 or tmp_subscripts.count(s) == 1
+        ]
+    else:
+        if not options['sum_ellipsis']:
+            if '@' not in output_subscript and -1 in dimension_dict:
+                raise ValueError("output had too few broadcast dimensions")
+        output_subscript = _parse_ellipsis_subscript(
+            output_subscript,
+            ellipsis_len=len(list(s for s in dimension_dict.keys() if s < 0))
+        )
+
+        # Make sure output subscripts are in the input
+        tmp_subscripts = set(_concat(input_subscripts))
+        for char in output_subscript:
+            if char not in tmp_subscripts:
+                raise ValueError(
+                    "Output character %s did not appear in the input" % _chr(char))
+
+    _einsum_diagonals(input_subscripts, operands)
+
+    # no raise after this
+
+    if any(op.size == 0 for op in operands):
+        return xp.zeros(
+            tuple(dimension_dict[s] for s in output_subscript),
+            dtype=result_dtype
+        )
+
+    if len(operands) >= 2:
+        # Don't squeeze if unary, because this affects later (in trivial sum)
+        # whether the return is a writeable view.
+        for num in range(len(operands)):
+            op = operands[num]
+            if 1 in op.shape:
+                squeeze_indices = []
+                sub = []
+                for i, s in enumerate(input_subscripts[num]):
+                    if op.shape[i] == 1:
+                        squeeze_indices.append(i)
+                    else:
+                        sub.append(s)
+                input_subscripts[num] = sub
+                operands[num] = xp.squeeze(op, axis=tuple(squeeze_indices))
+                assert len(operands[num].shape) == len(input_subscripts[num])
+
+    # unary einsum without summation should return a (writeable) view
+    returns_view = len(operands) == 1
+
+    # unary sum
+    for num, sub in enumerate(input_subscripts):
+        other_subscripts = input_subscripts.copy()
+        other_subscripts[num] = output_subscript
+        other_subscripts = _concat(other_subscripts)
+        sum_axes = tuple(
+            i
+            for i, s in enumerate(sub)
+            if s not in other_subscripts
+        )
+        if sum_axes:
+            returns_view = False
+            input_subscripts[num] = [
+                s
+                for i, s in enumerate(sub)
+                if i not in sum_axes
+            ]
+            op = operands[num]
+
+            # numpy.sum uses platform integer types by default
+            operands[num] = op.sum(axis=sum_axes, dtype=dtype or op.dtype)
+
+    """
+    count_dict = {k: 0 for k in dimension_dict}
+    for sub in input_subscripts:
+        for s in sub:
+            count_dict[s] += 1
+    """
+
+    optimize_algorithms = {
+        'greedy': _greedy_path,
+        'optimal': _optimal_path,
+    }
+    if optimize is False:
+        path = [(0, 1)] * (len(operands) - 1)  # TODO(kataoka): fix
+    elif isinstance(optimize, str) and optimize in optimize_algorithms.keys():
+        input_sets = [set(sub) for sub in input_subscripts]
+        output_set = set(output_subscript)
+        memory_arg = 1e99
+        algo = optimize_algorithms[optimize]
+        path = algo(input_sets, output_set, dimension_dict, memory_arg)
+    elif len(optimize) and (optimize[0] == 'einsum_path'):
+        path = optimize[1:]
+    else:
+        raise TypeError("Did not understand the path (optimize): %s" % str(optimize))
+
+    for idx0, idx1 in path:
+        # repeat binary einsum
+        assert idx0 < idx1
+        sub1 = input_subscripts.pop(idx1)
+        op1 = operands.pop(idx1)
+        sub0 = input_subscripts.pop(idx0)
+        op0 = operands.pop(idx0)
+
+        """
+        # This does not work because 0-dim array here might have been >=1-dim
+        # einsum.einsum(',i->', 3, np.array([1, 2], np.int16))
+        if op0.ndim == 0 and op1.ndim != 0:
+            op0 = op0.astype(op1.dtype)
+        elif op1.ndim == 0 and op0.ndim != 0:
+            op1 = op1.astype(op0.dtype)
+        """
+
+        set0 = set(sub0)
+        set1 = set(sub1)
+        assert len(set0) == len(sub0)
+        assert len(set1) == len(sub1)
+
+        set_out = set(_concat([output_subscript] + input_subscripts))
+        shared = set0 & set1
+        batch_dims = shared & set_out
+        contract_dims = shared - batch_dims
+
+        bs0, cs0, ts0 = _make_transpose_axes(sub0, batch_dims, contract_dims)
+        bs1, cs1, ts1 = _make_transpose_axes(sub1, batch_dims, contract_dims)
+
+        batch_size = _prod([dimension_dict[s] for s in batch_dims])
+        contract_size = _prod([dimension_dict[s] for s in contract_dims])
+
+        tmp0 = op0.transpose(bs0 + ts0 + cs0).reshape(batch_size, -1, contract_size)
+        tmp1 = op1.transpose(bs1 + cs1 + ts1).reshape(batch_size, contract_size, -1)
+        if dtype and xp.result_type(tmp0, tmp1) != dtype:
+            tmp0 = tmp0.astype(dtype)
+            tmp1 = tmp1.astype(dtype)
+        tmp_out = xp.matmul(tmp0, tmp1)
+
+        sub_b = [sub0[i] for i in bs0]
+        assert sub_b == [sub1[i] for i in bs1]
+        sub_l = [sub0[i] for i in ts0]
+        sub_r = [sub1[i] for i in ts1]
+
+        sub_out = sub_b + sub_l + sub_r
+        op_out = tmp_out.reshape([dimension_dict[s] for s in sub_out])
+
+        input_subscripts.append(sub_out)
+        operands.append(op_out)
+
+    # unary einsum at last
+    op0, = operands
+    sub0, = input_subscripts
+
+    transpose_axes = []
+    for s in output_subscript:
+        try:
+            transpose_axes.append(sub0.index(s))
+        except ValueError:
+            pass
+
+    op_out = op0.transpose(transpose_axes).reshape([
+        dimension_dict[s]
+        for s in output_subscript
+    ])
+    if optimize is False:
+        if not returns_view and op_out.dtype != result_dtype:
+            # assert False  # TODO(kataoka)
+            op_out = op_out.astype(result_dtype)
+    return op_out
+
+
+def _tuple_sorted_by_0(zs):
+    return tuple(i for _, i in sorted(zs))
+
+
+def _make_transpose_axes(sub, b_dims, c_dims):
+    bs = []
+    cs = []
+    ts = []
+    for i, s in enumerate(sub):
+        if s in b_dims:
+            bs.append((s, i))
+        elif s in c_dims:
+            cs.append((s, i))
+        else:
+            ts.append((s, i))
+    return (
+        _tuple_sorted_by_0(bs),
+        _tuple_sorted_by_0(cs),
+        _tuple_sorted_by_0(ts),
+    )
+"""
+    if position == 0:
+        it = itertools.chain(sorted(bs), sorted(ts), sorted(cs))
+    else:
+        it = itertools.chain(sorted(bs), sorted(cs), sorted(ts))
+    return tuple(i for _, i in it)
+"""
