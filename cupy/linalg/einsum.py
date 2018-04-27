@@ -47,7 +47,9 @@ def _transpose_ex(a, axeses):
         )
         shape.append(dim)
         strides.append(stride)
-    return a.view()._set_shape_and_strides(shape, strides)
+    a = a.view()
+    a._set_shape_and_strides(shape, strides)
+    return a
 
 
 def _parse_int_subscript(sub):
