@@ -2,9 +2,9 @@ import functools
 import itertools
 import operator
 
-import cupy as xp
-
-from cupy.linalg.einsum_opt import _greedy_path, _optimal_path
+import cupy
+from cupy.linalg.einsum_opt import _greedy_path
+from cupy.linalg.einsum_opt import _optimal_path
 
 
 options = {
@@ -233,10 +233,10 @@ def einsum(*operands, **kwargs):
                         % list(kwargs.keys))
 
     operands = [
-        xp.asanyarray(arr)
+        cupy.asanyarray(arr)
         for arr in operands
     ]
-    result_dtype = dtype or xp.result_type(*operands)
+    result_dtype = dtype or cupy.result_type(*operands)
 
     input_subscripts = [
         _parse_ellipsis_subscript(sub, ndim=arr.ndim)
@@ -293,7 +293,7 @@ def einsum(*operands, **kwargs):
     # no raise after this
 
     if any(op.size == 0 for op in operands):
-        return xp.zeros(
+        return cupy.zeros(
             tuple(dimension_dict[s] for s in output_subscript),
             dtype=result_dtype
         )
@@ -312,7 +312,7 @@ def einsum(*operands, **kwargs):
                     else:
                         sub.append(s)
                 input_subscripts[num] = sub
-                operands[num] = xp.squeeze(op, axis=tuple(squeeze_indices))
+                operands[num] = cupy.squeeze(op, axis=tuple(squeeze_indices))
                 assert len(operands[num].shape) == len(input_subscripts[num])
 
     # unary einsum without summation should return a (writeable) view
@@ -399,10 +399,10 @@ def einsum(*operands, **kwargs):
 
         tmp0 = op0.transpose(bs0 + ts0 + cs0).reshape(batch_size, -1, contract_size)
         tmp1 = op1.transpose(bs1 + cs1 + ts1).reshape(batch_size, contract_size, -1)
-        if dtype and xp.result_type(tmp0, tmp1) != dtype:
+        if dtype and cupy.result_type(tmp0, tmp1) != dtype:
             tmp0 = tmp0.astype(dtype)
             tmp1 = tmp1.astype(dtype)
-        tmp_out = xp.matmul(tmp0, tmp1)
+        tmp_out = cupy.matmul(tmp0, tmp1)
 
         sub_b = [sub0[i] for i in bs0]
         assert sub_b == [sub1[i] for i in bs1]

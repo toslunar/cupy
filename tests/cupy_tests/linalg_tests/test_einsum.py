@@ -1,9 +1,15 @@
+import itertools
 import unittest
 
 import numpy
-from chainer.testing import product_dict
 
 from cupy import testing
+
+
+def product_dict(*parameters):  # from chainer.testing
+    return [
+        {k: v for dic in dicts for k, v in six.iteritems(dic)}
+        for dicts in itertools.product(*parameters)]
 
 
 def _dec_shape(shape, dec):
