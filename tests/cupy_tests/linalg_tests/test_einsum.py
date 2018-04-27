@@ -3,6 +3,7 @@ import unittest
 
 import numpy
 
+import cupy
 from cupy import testing
 
 
@@ -199,6 +200,7 @@ class TestEinSumUnaryOperation(unittest.TestCase):
         a = testing.shaped_arange(self.shape_a, xp, dtype)
         return xp.einsum(self.subscripts, a)
 
+    @testing.with_requires('numpy>=1.10')
     @testing.for_all_dtypes()
     @testing.numpy_cupy_allclose(contiguous_check=False)
     def test_einsum_unary_views(self, xp, dtype):
@@ -347,7 +349,10 @@ class TestEinSumTernaryOperation(unittest.TestCase):
         a.ravel()[:1] = 1
         b.ravel()[:1] = 1
         c.ravel()[:1] = 1
-        return xp.einsum(self.subscripts, a, b, c, optimize=self.optimize)
+        if xp == cupy:
+            return xp.einsum(self.subscripts, a, b, c, optimize=self.optimize)
+        else:
+            return xp.einsum(self.subscripts, a, b, c)
 
 
 # testing.run_module(__name__, __file__)
