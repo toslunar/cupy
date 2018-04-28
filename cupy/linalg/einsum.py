@@ -236,7 +236,7 @@ def einsum(*operands, **kwargs):
         cupy.asanyarray(arr)
         for arr in operands
     ]
-    result_dtype = dtype or cupy.result_type(*operands)
+    result_dtype = cupy.result_type(*operands) if dtype is None else dtype
 
     input_subscripts = [
         _parse_ellipsis_subscript(sub, ndim=arr.ndim)
@@ -320,7 +320,7 @@ def einsum(*operands, **kwargs):
 
     # unary sum
     for num, sub in enumerate(input_subscripts):
-        other_subscripts = input_subscripts.copy()
+        other_subscripts = list(input_subscripts)
         other_subscripts[num] = output_subscript
         other_subscripts = _concat(other_subscripts)
         sum_axes = tuple(
@@ -338,7 +338,9 @@ def einsum(*operands, **kwargs):
             op = operands[num]
 
             # numpy.sum uses platform integer types by default
-            operands[num] = op.sum(axis=sum_axes, dtype=dtype or op.dtype)
+            operands[num] = op.sum(
+                axis=sum_axes,
+                dtype=op.dtype if dtype is None else dtype)
 
     """
     count_dict = {k: 0 for k in dimension_dict}
