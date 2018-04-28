@@ -333,12 +333,14 @@ def einsum(*operands, **kwargs):
                 for i, s in enumerate(sub)
                 if i not in sum_axes
             ]
-            op = operands[num]
+            op0 = operands[num]
 
             # numpy.sum uses platform integer types by default
-            operands[num] = op.sum(
-                axis=sum_axes,
-                dtype=op.dtype if dtype is None else dtype)
+            tmp_dtype = op0.dtype if dtype is None else dtype
+            op_out = op0.sum(axis=sum_axes, dtype=dtype)
+            if op_out.dtype != tmp_dtype:
+                op_out = op_out.astype(tmp_dtype)
+            operands[num] = op_out
 
     """
     count_dict = {k: 0 for k in dimension_dict}
@@ -399,7 +401,7 @@ def einsum(*operands, **kwargs):
 
         tmp0 = op0.transpose(bs0 + ts0 + cs0).reshape(batch_size, -1, contract_size)
         tmp1 = op1.transpose(bs1 + cs1 + ts1).reshape(batch_size, contract_size, -1)
-        if dtype and xp.result_type(tmp0, tmp1) != dtype:
+        if dtype is not None and xp.result_type(tmp0, tmp1) != dtype:
             tmp0 = tmp0.astype(dtype)
             tmp1 = tmp1.astype(dtype)
         tmp_out = xp.matmul(tmp0, tmp1)
