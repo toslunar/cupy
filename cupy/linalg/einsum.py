@@ -115,7 +115,7 @@ def _parse_einsum_input(operands, parse_ellipsis=True):
         # Parse "->"
         if ("-" in subscripts) or (">" in subscripts):
             # Check for proper "->"
-            invalid = (subscripts.count("-") > 1) or (subscripts.count(">") > 1)
+            invalid = subscripts.count("-") > 1 or subscripts.count(">") > 1
             subscripts = subscripts.split("->")
             if invalid or len(subscripts) != 2:
                 raise ValueError("Subscripts can only contain one '->'.")
@@ -127,8 +127,8 @@ def _parse_einsum_input(operands, parse_ellipsis=True):
 
         input_subscripts = input_subscripts.split(",")
         if len(input_subscripts) != len(operands):
-            raise ValueError("Number of einsum subscripts must be equal to the "
-                             "number of operands.")
+            raise ValueError("Number of einsum subscripts must be equal to the"
+                             " number of operands.")
 
     else:
         tmp_operands = list(operands)
@@ -159,7 +159,8 @@ def _parse_ellipsis_subscript(subscript, ndim=None, ellipsis_len=None):
         sub, = subs
         if ndim is not None and len(sub) != ndim:
             # raise ValueError later
-            return "Einstein sum subscript %s does not contain the correct number of indices " % subs
+            return "Einstein sum subscript %s does not contain the correct" \
+                " number of indices " % subs
         return list(map(ord, sub))
     elif len(subs) == 2:
         left_sub, right_sub = subs
@@ -167,7 +168,8 @@ def _parse_ellipsis_subscript(subscript, ndim=None, ellipsis_len=None):
             ellipsis_len = ndim - (len(left_sub) + len(right_sub))
         if ellipsis_len < 0:
             # raise ValueError later
-            return "Einstein sum subscript %s...%s does not contain the correct number of indices " % (left_sub, right_sub)
+            return "Einstein sum subscript %s...%s does not contain the" \
+                " correct number of indices " % (left_sub, right_sub)
         return list(itertools.chain(
             map(ord, left_sub),
             range(-ellipsis_len, 0),
@@ -218,7 +220,8 @@ def _einsum_diagonals(input_subscripts, operands):
 
 
 def einsum(*operands, **kwargs):
-    input_subscripts, output_subscript, operands = _parse_einsum_input(operands)
+    input_subscripts, output_subscript, operands = \
+        _parse_einsum_input(operands)
     assert isinstance(input_subscripts, list)
     assert isinstance(operands, list)
 
@@ -286,7 +289,8 @@ def einsum(*operands, **kwargs):
         for char in output_subscript:
             if char not in tmp_subscripts:
                 raise ValueError(
-                    "Output character %s did not appear in the input" % _chr(char))
+                    "Output character %s did not appear in the input"
+                    % _chr(char))
 
     _einsum_diagonals(input_subscripts, operands)
 
@@ -366,7 +370,8 @@ def einsum(*operands, **kwargs):
     elif len(optimize) and (optimize[0] == 'einsum_path'):
         path = optimize[1:]
     else:
-        raise TypeError("Did not understand the path (optimize): %s" % str(optimize))
+        raise TypeError("Did not understand the path (optimize): %s"
+                        % str(optimize))
 
     for idx0, idx1 in path:
         # repeat binary einsum
@@ -401,8 +406,10 @@ def einsum(*operands, **kwargs):
         batch_size = _prod([dimension_dict[s] for s in batch_dims])
         contract_size = _prod([dimension_dict[s] for s in contract_dims])
 
-        tmp0 = op0.transpose(bs0 + ts0 + cs0).reshape(batch_size, -1, contract_size)
-        tmp1 = op1.transpose(bs1 + cs1 + ts1).reshape(batch_size, contract_size, -1)
+        tmp0 = op0.transpose(bs0 + ts0 + cs0).reshape(
+            batch_size, -1, contract_size)
+        tmp1 = op1.transpose(bs1 + cs1 + ts1).reshape(
+            batch_size, contract_size, -1)
         if dtype is not None and cupy.result_type(tmp0, tmp1) != dtype:
             tmp0 = tmp0.astype(dtype)
             tmp1 = tmp1.astype(dtype)
