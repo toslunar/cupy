@@ -232,11 +232,11 @@ def einsum(*operands, **kwargs):
         raise TypeError("Did not understand the following kwargs: %s"
                         % list(kwargs.keys))
 
+    result_dtype = cupy.result_type(*operands) if dtype is None else dtype
     operands = [
         cupy.asanyarray(arr)
         for arr in operands
     ]
-    result_dtype = cupy.result_type(*operands) if dtype is None else dtype
 
     input_subscripts = [
         _parse_ellipsis_subscript(sub, ndim=arr.ndim)
