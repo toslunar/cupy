@@ -2,7 +2,6 @@ import unittest
 
 import numpy
 
-import cupy
 from cupy import testing
 
 
@@ -390,13 +389,6 @@ class TestEinSumTernaryOperation(unittest.TestCase):
                     self.subscripts, a, b, c, optimize=optimize)
                 testing.assert_allclose(optimized_out, out)
         return out
-
-
-def xp_einsum_path(xp, *args, **kwargs):
-    if xp is numpy:
-        return numpy.einsum_path(*args, **kwargs)
-    else:
-        return cupy.linalg.einsum.einsum_path(*args, **kwargs)
 
 
 @testing.parameterize(
