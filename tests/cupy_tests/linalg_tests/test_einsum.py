@@ -264,7 +264,7 @@ class TestEinSumUnaryOperationWithScalar(unittest.TestCase):
      'subscripts': 'ij...,ji...->i...'},
     # trace and tensordot and diagonal
     {'shape_a': (2, 3, 2, 4), 'shape_b': (3, 2, 2),
-     'subscripts': 'ijil,jkk->kj', 'skip_overflow': True},
+     'subscripts': 'ijil,jkk->kj'},
     {'shape_a': (2, 4, 2, 3), 'shape_b': (3, 2, 4),
      'subscripts': 'i...ij,ji...->...j'},
     # broadcast
@@ -283,24 +283,20 @@ class TestEinSumUnaryOperationWithScalar(unittest.TestCase):
     {'shape_a': (4, 3), 'shape_b': (3, 2),
      'subscripts': 'ik,k...->i...'},
     {'shape_a': (2, 3, 4, 5), 'shape_b': (4,),
-     'subscripts': 'ijkl,k', 'skip_overflow': True},
+     'subscripts': 'ijkl,k'},
     {'shape_a': (2, 3, 4, 5), 'shape_b': (4,),
-     'subscripts': '...kl,k', 'skip_overflow': True},
+     'subscripts': '...kl,k'},
     {'shape_a': (2, 3, 4, 5), 'shape_b': (4,),
-     'subscripts': '...kl,k...', 'skip_overflow': True},
+     'subscripts': '...kl,k...'},
     {'shape_a': (1, 1, 1, 2, 3, 2), 'shape_b': (2, 3, 2, 2),
      'subscripts': '...lmn,lmno->...o'},
 ))
 class TestEinSumBinaryOperation(unittest.TestCase):
-    skip_dtypes = (numpy.bool_, numpy.int8, numpy.uint8)
-    skip_overflow = False
-
-    @testing.for_all_dtypes_combination(['dtype_a', 'dtype_b'], no_bool=True)
+    @testing.for_all_dtypes_combination(
+        ['dtype_a', 'dtype_b'],
+        no_float16=True)  # Avoid numpy issue #10899
     @testing.numpy_cupy_allclose(contiguous_check=False)
     def test_einsum_binary(self, xp, dtype_a, dtype_b):
-        if self.skip_overflow and (dtype_a in self.skip_dtypes or
-                                   dtype_b in self.skip_dtypes):
-            return xp.array([])
         a = testing.shaped_arange(self.shape_a, xp, dtype_a)
         b = testing.shaped_arange(self.shape_b, xp, dtype_b)
         return xp.einsum(self.subscripts, a, b)
@@ -323,50 +319,40 @@ class TestEinSumBinaryOperationWithScalar(unittest.TestCase):
 
 
 @testing.parameterize(*augument_einsum_testcases(
-*product_dict(testing.product(
-    {
-        'dtype_map': [(0, 0, 1), (0, 1, 0), (1, 0, 0)],
-        'optimize': [
-            False,
-            True,  # 'greedy'
-            'optimal',
-            ['einsum_path', (0, 1), (0, 1)],
-            ['einsum_path', (0, 2), (0, 1)],
-            ['einsum_path', (1, 2), (0, 1)],
-        ],
-    }
-), [
     {'shape_a': (2, 3), 'shape_b': (3, 4), 'shape_c': (4, 5),
-     'subscripts': 'ij,jk,kl', 'skip_overflow': True},
+     'subscripts': 'ij,jk,kl'},
     {'shape_a': (2, 4), 'shape_b': (2, 3), 'shape_c': (2,),
-     'subscripts': 'ij,ik,i->ijk', 'skip_overflow': True},
+     'subscripts': 'ij,ik,i->ijk'},
     {'shape_a': (2, 4), 'shape_b': (3, 2), 'shape_c': (2,),
-     'subscripts': 'ij,ki,i->jk', 'skip_overflow': True},
+     'subscripts': 'ij,ki,i->jk'},
     {'shape_a': (2, 3, 4), 'shape_b': (2,), 'shape_c': (3, 4, 2),
-     'subscripts': 'i...,i,...i->...i', 'skip_overflow': True},
-])
+     'subscripts': 'i...,i,...i->...i'},
 ))
 class TestEinSumTernaryOperation(unittest.TestCase):
-    skip_dtypes = (numpy.bool_, numpy.int8, numpy.uint8)
-
-    @testing.for_all_dtypes_combination(['dtype_x', 'dtype_y'], no_bool=True, no_float16=True)
+    @testing.for_all_dtypes_combination(
+        ['dtype_a', 'dtype_b', 'dtype_c'],
+        no_float16=True)  # Avoid numpy issue #10899
     @testing.numpy_cupy_allclose(contiguous_check=False)
-    def test_einsum_ternary(self, xp, dtype_x, dtype_y):
-        if self.skip_overflow and (dtype_x in self.skip_dtypes or
-                                   dtype_y in self.skip_dtypes):
-            return xp.array([])
-        dtypes = [[dtype_x, dtype_y][self.dtype_map[i]] for i in range(3)]
-        a = testing.shaped_arange(self.shape_a, xp, dtypes[0])
-        b = testing.shaped_arange(self.shape_b, xp, dtypes[1])
-        c = testing.shaped_arange(self.shape_c, xp, dtypes[2])
-        # Avoid numpy issue #10930
-        a.ravel()[:1] = 1
-        b.ravel()[:1] = 1
-        c.ravel()[:1] = 1
-        if xp == cupy:
-            return xp.einsum(self.subscripts, a, b, c, optimize=self.optimize)
-        else:
-            return xp.einsum(self.subscripts, a, b, c)
+    def test_einsum_ternary(self, xp, dtype_a, dtype_b, dtype_c):
+        a = testing.shaped_arange(self.shape_a, xp, dtype_a)
+        b = testing.shaped_arange(self.shape_b, xp, dtype_b)
+        c = testing.shaped_arange(self.shape_c, xp, dtype_c)
+
+        out = xp.einsum(self.subscripts, a, b, c, optimize=False)
+
+        if xp is not numpy:  # Avoid numpy issues #11059, #11060
+            for optimize in [
+                    False,
+                    True,  # 'greedy'
+                    'optimal',
+                    ['einsum_path', (0, 1), (0, 1)],
+                    ['einsum_path', (0, 2), (0, 1)],
+                    ['einsum_path', (1, 2), (0, 1)],
+            ]:
+                optimized_out = xp.einsum(
+                    self.subscripts, a, b, c, optimize=optimize)
+                testing.assert_allclose(optimized_out, out)
+        return out
 
 
 # testing.run_module(__name__, __file__)
