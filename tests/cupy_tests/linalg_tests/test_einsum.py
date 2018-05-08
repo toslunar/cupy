@@ -360,6 +360,14 @@ class TestEinSumBinaryOperationWithScalar(unittest.TestCase):
      'subscripts': 'ij,ki,i->jk'},
     {'shape_a': (2, 3, 4), 'shape_b': (2,), 'shape_c': (3, 4, 2),
      'subscripts': 'i...,i,...i->...i'},
+    {'shape_a': (2, 3, 4), 'shape_b': (4, 3), 'shape_c': (3, 3, 4),
+     'subscripts': 'a...,...b,c...->abc...'},
+    {'shape_a': (2, 3, 4), 'shape_b': (3, 4), 'shape_c': (3, 3, 4),
+     'subscripts': 'a...,...,c...->ac...'},
+    {'shape_a': (3, 3, 4), 'shape_b': (4, 3), 'shape_c': (2, 3, 4),
+     'subscripts': 'a...,...b,c...->abc...'},
+    {'shape_a': (3, 3, 4), 'shape_b': (3, 4), 'shape_c': (2, 3, 4),
+     'subscripts': 'a...,...,c...->ac...'},
 ))
 class TestEinSumTernaryOperation(unittest.TestCase):
     @testing.for_all_dtypes_combination(
