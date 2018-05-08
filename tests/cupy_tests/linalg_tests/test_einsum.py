@@ -1,16 +1,8 @@
-import itertools
 import unittest
 
 import numpy
 
-import cupy
 from cupy import testing
-
-
-def product_dict(*parameters):  # from chainer.testing
-    return [
-        {k: v for dic in dicts for k, v in dic.items()}
-        for dicts in itertools.product(*parameters)]
 
 
 def _dec_shape(shape, dec):
@@ -353,6 +345,3 @@ class TestEinSumTernaryOperation(unittest.TestCase):
                     self.subscripts, a, b, c, optimize=optimize)
                 testing.assert_allclose(optimized_out, out)
         return out
-
-
-# testing.run_module(__name__, __file__)
