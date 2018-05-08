@@ -220,7 +220,7 @@ def _einsum_diagonals(input_subscripts, operands):
 
 
 def einsum(*operands, **kwargs):
-    """einsum(subscripts, *operands, dtype=False, casting='safe')
+    """einsum(subscripts, *operands, dtype=False)
 
     Evaluates the Einstein summation convention on the operands.
     Using the Einstein summation convention, many common multi-dimensional
@@ -230,7 +230,7 @@ def einsum(*operands, **kwargs):
     .. note::
        Memory contiguity of calculation result is not always compatible with
        `numpy.einsum`.
-       ``out`` and ``order`` options are not supported.
+       ``out``, ``order``, and ``casting`` options are not supported.
 
     Args:
         subscripts (str): Specifies the subscripts for summation.
@@ -250,7 +250,9 @@ def einsum(*operands, **kwargs):
     assert isinstance(operands, list)
 
     dtype = kwargs.pop('dtype', None)
-    casting = kwargs.pop('casting', 'safe')
+
+    # casting = kwargs.pop('casting', 'safe')
+    casting_kwargs = {}  # casting is not supported yet in astype
 
     optimize = kwargs.pop('optimize', False)
     # assert optimize is False, "optimize: sorry"
@@ -371,7 +373,7 @@ def einsum(*operands, **kwargs):
 
             operands[num] = (
                 operands[num]
-                .astype(result_dtype, casting=casting, copy=False)
+                .astype(result_dtype, copy=False, **casting_kwargs)
                 .sum(axis=sum_axes)
                 # .sum uses platform integer types by default
                 .astype(result_dtype, copy=False)
@@ -379,7 +381,7 @@ def einsum(*operands, **kwargs):
 
     if not returns_view:
         operands = [
-            arr.astype(result_dtype, casting=casting, copy=False)
+            arr.astype(result_dtype, copy=False, **casting_kwargs)
             for arr in operands
         ]
 
