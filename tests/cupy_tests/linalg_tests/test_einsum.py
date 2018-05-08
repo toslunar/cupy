@@ -416,24 +416,24 @@ def xp_einsum_path(xp, *args, **kwargs):
 @testing.with_requires('numpy>=1.12')
 class TestEinSumLarge(unittest.TestCase):
 
-    chars = 'abcdefghij'
-    sizes = numpy.array([2, 3, 4, 5, 4, 3, 2, 6, 5, 4, 3])
-    global_size_dict = {}
-    for size, char in zip(sizes, chars):
-        global_size_dict[char] = size
+    def setUp(self):
+        chars = 'abcdefghij'
+        sizes = numpy.array([2, 3, 4, 5, 4, 3, 2, 6, 5, 4, 3])
+        size_dict = {}
+        for size, char in zip(sizes, chars):
+            size_dict[char] = size
 
-    def build_operands(self, string, size_dict=global_size_dict):
         # Builds views based off initial operands
+        string = self.subscript
         operands = [string]
         terms = string.split('->')[0].split(',')
         for term in terms:
             dims = [size_dict[x] for x in term]
             operands.append(numpy.random.rand(*dims))
 
-        return operands
+        self.operands = operands
 
     @testing.numpy_cupy_allclose(contiguous_check=False)
     def test_einsum(self, xp):
-        outer_test = self.build_operands(self.subscript)
         # I hope there's no problem with np.einsum for these cases...
-        return xp.einsum(*outer_test, optimize=True)
+        return xp.einsum(*self.operands, optimize=True)
