@@ -361,6 +361,14 @@ class TestEinSumBinaryOperationWithScalar(unittest.TestCase):
      'subscripts': 'ij,ki,i->jk'},
     {'shape_a': (2, 3, 4), 'shape_b': (2,), 'shape_c': (3, 4, 2),
      'subscripts': 'i...,i,...i->...i'},
+    {'shape_a': (2, 3, 4), 'shape_b': (4, 3), 'shape_c': (3, 3, 4),
+     'subscripts': 'a...,...b,c...->abc...'},
+    {'shape_a': (2, 3, 4), 'shape_b': (3, 4), 'shape_c': (3, 3, 4),
+     'subscripts': 'a...,...,c...->ac...'},
+    {'shape_a': (3, 3, 4), 'shape_b': (4, 3), 'shape_c': (2, 3, 4),
+     'subscripts': 'a...,...b,c...->abc...'},
+    {'shape_a': (3, 3, 4), 'shape_b': (3, 4), 'shape_c': (2, 3, 4),
+     'subscripts': 'a...,...,c...->ac...'},
 ))
 class TestEinSumTernaryOperation(unittest.TestCase):
     @testing.for_all_dtypes_combination(
@@ -437,27 +445,3 @@ class TestEinSumPath(unittest.TestCase):
         outer_test = self.build_operands(self.subscript)
         return xp_einsum_path(xp, *outer_test, optimize=self.opt,
                               einsum_call=True)[1]
-
-@testing.parameterize(
-    {'shape_a': (2, 3, 4), 'shape_b': (4, 3), 'shape_c': (3, 3, 4),
-     'subscript': 'a...,...b,c...->abc...'},
-    {'shape_a': (2, 3, 4), 'shape_b': (3, 4), 'shape_c': (3, 3, 4),
-     'subscript': 'a...,...,c...->ac...'},
-    {'shape_a': (3, 3, 4), 'shape_b': (4, 3), 'shape_c': (2, 3, 4),
-     'subscript': 'a...,...b,c...->abc...'},
-    {'shape_a': (3, 3, 4), 'shape_b': (3, 4), 'shape_c': (2, 3, 4),
-     'subscript': 'a...,...,c...->ac...'},
-)
-# numpy.einsum_path return format was changed in newer version.
-# So we test with 1.12 only.
-@testing.with_requires('numpy==1.12')
-class TestEinSumPathEllipsis(unittest.TestCase):
-
-    @testing.numpy_cupy_equal()
-    def test_einsum_path_ellipsis(self, xp):
-        a = testing.shaped_arange(self.shape_a, xp, dtype=numpy.float32)
-        b = testing.shaped_arange(self.shape_b, xp, dtype=numpy.float32)
-        c = testing.shaped_arange(self.shape_c, xp, dtype=numpy.float32)
-        # Check path only
-        return xp_einsum_path(xp, self.subscript, a, b, c, optimize=True,
-                              einsum_call=True)[1][0][:2]
