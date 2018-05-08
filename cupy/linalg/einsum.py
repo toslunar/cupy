@@ -379,7 +379,9 @@ def einsum(*operands, **kwargs):
                 .astype(result_dtype, copy=False)
             )
 
-    if not returns_view:
+    if returns_view:
+        operands = [arr.view() for arr in operands]
+    else:
         operands = [
             arr.astype(result_dtype, copy=False, **casting_kwargs)
             for arr in operands
