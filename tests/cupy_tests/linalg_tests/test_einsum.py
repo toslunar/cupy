@@ -200,14 +200,12 @@ class TestEinSumUnaryOperation(unittest.TestCase):
         return xp.einsum(self.subscripts, a)
 
     @testing.for_all_dtypes()
-    @testing.numpy_cupy_allclose(contiguous_check=False)
+    @testing.numpy_cupy_equal()
     def test_einsum_unary_views(self, xp, dtype):
         a = testing.shaped_arange(self.shape_a, xp, dtype)
         b = xp.einsum(self.subscripts, a)
 
-        if b.ndim != 0:  # scalar is returned if numpy
-            b[...] = 0
-        return a
+        return b.ndim == 0 or xp.shares_memory(a, b)
 
     @testing.for_all_dtypes_combination(
         ['dtype_a', 'dtype_out'],
@@ -329,7 +327,6 @@ class TestEinSumTernaryOperation(unittest.TestCase):
 
         if xp is not numpy:  # Avoid numpy issues #11059, #11060
             for optimize in [
-                    False,
                     True,  # 'greedy'
                     'optimal',
                     ['einsum_path', (0, 1), (0, 1)],
