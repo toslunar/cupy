@@ -319,7 +319,7 @@ class TestEinSumBinaryOperationWithScalar(unittest.TestCase):
 
 
 @testing.parameterize(*augument_einsum_testcases(
-*testing.product_dict(testing.product(
+*product_dict(testing.product(
     {
         'dtype_map': [(0, 0, 1), (0, 1, 0), (1, 0, 0)],
         'optimize': [
