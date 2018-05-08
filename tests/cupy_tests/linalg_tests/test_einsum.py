@@ -401,20 +401,20 @@ def xp_einsum_path(xp, *args, **kwargs):
 
 @testing.parameterize(
     # memory constraint
-    {'subscript': 'a,b,c->abc', 'opt': ('greedy', 0)},
-    {'subscript': 'acdf,jbje,gihb,hfac', 'opt': ('greedy', 0)},
+    {'subscript': 'a,b,c->abc'},
+    {'subscript': 'acdf,jbje,gihb,hfac'},
     # long paths
-    {'subscript': 'acdf,jbje,gihb,hfac,gfac,gifabc,hfac', 'opt': True},
-    {'subscript': 'chd,bde,agbc,hiad,bdi,cgh,agdb', 'opt': True},
+    {'subscript': 'acdf,jbje,gihb,hfac,gfac,gifabc,hfac'},
+    {'subscript': 'chd,bde,agbc,hiad,bdi,cgh,agdb'},
     # edge cases
-    {'subscript': 'eb,cb,fb->cef', 'opt': True},
-    {'subscript': 'dd,fb,be,cdb->cef', 'opt': True},
-    {'subscript': 'bca,cdb,dbf,afc->', 'opt': True},
-    {'subscript': 'dcc,fce,ea,dbf->ab', 'opt': True},
-    {'subscript': 'a,ac,ab,ad,cd,bd,bc->', 'opt': True},
+    {'subscript': 'eb,cb,fb->cef'},
+    {'subscript': 'dd,fb,be,cdb->cef'},
+    {'subscript': 'bca,cdb,dbf,afc->'},
+    {'subscript': 'dcc,fce,ea,dbf->ab'},
+    {'subscript': 'a,ac,ab,ad,cd,bd,bc->'},
 )
-@testing.with_requires('numpy==1.12')
-class TestEinSumPath(unittest.TestCase):
+@testing.with_requires('numpy>=1.12')
+class TestEinSumLarge(unittest.TestCase):
 
     chars = 'abcdefghij'
     sizes = numpy.array([2, 3, 4, 5, 4, 3, 2, 6, 5, 4, 3])
@@ -432,8 +432,8 @@ class TestEinSumPath(unittest.TestCase):
 
         return operands
 
-    @testing.numpy_cupy_equal()
-    def test_einsum_path(self, xp):
+    @testing.numpy_cupy_allclose(contiguous_check=False)
+    def test_einsum(self, xp):
         outer_test = self.build_operands(self.subscript)
-        return xp_einsum_path(xp, *outer_test, optimize=self.opt,
-                              einsum_call=True)[1]
+        # I hope there's no problem with np.einsum for these cases...
+        return xp.einsum(*outer_test, optimize=True)
