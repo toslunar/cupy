@@ -220,12 +220,37 @@ def _einsum_diagonals(input_subscripts, operands):
 
 
 def einsum(*operands, **kwargs):
+    """einsum(subscripts, *operands, dtype=False, casting='safe')
+
+    Evaluates the Einstein summation convention on the operands.
+    Using the Einstein summation convention, many common multi-dimensional
+    array operations can be represented in a simple fashion. This function
+    provides a way to compute such summations.
+
+    .. note::
+       Memory contiguity of calculation result is not always compatible with
+       `numpy.einsum`.
+       ``out`` and ``order`` options are not supported.
+
+    Args:
+        subscripts (str): Specifies the subscripts for summation.
+        operands (sequence of arrays): These are the arrays for the operation.
+
+    Returns:
+        cupy.ndarray:
+            The calculation based on the Einstein summation convention.
+
+    .. seealso:: :func:`numpy.einsum`
+
+    """
+
     input_subscripts, output_subscript, operands = \
         _parse_einsum_input(operands)
     assert isinstance(input_subscripts, list)
     assert isinstance(operands, list)
 
     dtype = kwargs.pop('dtype', None)
+    casting = kwargs.pop('casting', 'safe')
 
     optimize = kwargs.pop('optimize', False)
     # assert optimize is False, "optimize: sorry"
@@ -294,15 +319,15 @@ def einsum(*operands, **kwargs):
 
     _einsum_diagonals(input_subscripts, operands)
 
-    # no raise after this
-
-    if any(op.size == 0 for op in operands):
-        return cupy.zeros(
-            tuple(dimension_dict[s] for s in output_subscript),
-            dtype=result_dtype
-        )
+    # no more raises
 
     if len(operands) >= 2:
+        if any(op.size == 0 for op in operands):
+            return cupy.zeros(
+                tuple(dimension_dict[s] for s in output_subscript),
+                dtype=result_dtype
+            )
+
         # Don't squeeze if unary, because this affects later (in trivial sum)
         # whether the return is a writeable view.
         for num in range(len(operands)):
@@ -339,21 +364,26 @@ def einsum(*operands, **kwargs):
                 for i, s in enumerate(sub)
                 if i not in sum_axes
             ]
-            op0 = operands[num]
 
-            # numpy.sum uses platform integer types by default
-            tmp_dtype = op0.dtype if dtype is None else dtype
-            op_out = op0.sum(axis=sum_axes, dtype=dtype)
-            if op_out.dtype != tmp_dtype:
-                op_out = op_out.astype(tmp_dtype)
-            operands[num] = op_out
+            # Cannot do the following in cupy (bug?)
+            # operands[num] = operands[num].sum(
+            #     axis=sum_axes, dtype=result_dtype)
 
-    """
-    count_dict = {k: 0 for k in dimension_dict}
-    for sub in input_subscripts:
-        for s in sub:
-            count_dict[s] += 1
-    """
+            operands[num] = (
+                operands[num]
+                .astype(result_dtype, casting=casting, copy=False)
+                .sum(axis=sum_axes)
+                # .sum uses platform integer types by default
+                .astype(result_dtype, copy=False)
+            )
+
+    if not returns_view:
+        operands = [
+            arr.astype(result_dtype, casting=casting, copy=False)
+            for arr in operands
+        ]
+
+    # no more casts
 
     optimize_algorithms = {
         'greedy': _greedy_path,
@@ -381,15 +411,6 @@ def einsum(*operands, **kwargs):
         sub0 = input_subscripts.pop(idx0)
         op0 = operands.pop(idx0)
 
-        """
-        # This does not work because 0-dim array here might have been >=1-dim
-        # einsum.einsum(',i->', 3, np.array([1, 2], np.int16))
-        if op0.ndim == 0 and op1.ndim != 0:
-            op0 = op0.astype(op1.dtype)
-        elif op1.ndim == 0 and op0.ndim != 0:
-            op1 = op1.astype(op0.dtype)
-        """
-
         set0 = set(sub0)
         set1 = set(sub1)
         assert len(set0) == len(sub0)
@@ -410,9 +431,6 @@ def einsum(*operands, **kwargs):
             batch_size, -1, contract_size)
         tmp1 = op1.transpose(bs1 + cs1 + ts1).reshape(
             batch_size, contract_size, -1)
-        if dtype is not None and cupy.result_type(tmp0, tmp1) != dtype:
-            tmp0 = tmp0.astype(dtype)
-            tmp1 = tmp1.astype(dtype)
         tmp_out = cupy.matmul(tmp0, tmp1)
 
         sub_b = [sub0[i] for i in bs0]
@@ -432,19 +450,14 @@ def einsum(*operands, **kwargs):
 
     transpose_axes = []
     for s in output_subscript:
-        try:
+        if s in sub0:
             transpose_axes.append(sub0.index(s))
-        except ValueError:
-            pass
 
     op_out = op0.transpose(transpose_axes).reshape([
         dimension_dict[s]
         for s in output_subscript
     ])
-    if optimize is False:
-        if not returns_view and op_out.dtype != result_dtype:
-            # assert False  # TODO(kataoka)
-            op_out = op_out.astype(result_dtype)
+    assert returns_view or op_out.dtype == result_dtype
     return op_out
 
 
@@ -468,10 +481,3 @@ def _make_transpose_axes(sub, b_dims, c_dims):
         _tuple_sorted_by_0(cs),
         _tuple_sorted_by_0(ts),
     )
-"""
-    if position == 0:
-        it = itertools.chain(sorted(bs), sorted(ts), sorted(cs))
-    else:
-        it = itertools.chain(sorted(bs), sorted(cs), sorted(ts))
-    return tuple(i for _, i in it)
-"""

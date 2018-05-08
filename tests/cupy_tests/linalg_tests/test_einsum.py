@@ -28,6 +28,24 @@ def _rand1_shape(shape, prob):
     return tuple(new_shape)
 
 
+def augument_einsum_testcases(*params):
+    # rs = numpy.random.RandomState()
+    for dec in range(3):
+        for drop in [0, 0.2, 0.8]:
+            for param in params:
+                param_new = param.copy()
+                for k in param.keys():
+                    if k.startswith('shape_'):
+                        param_new[k] = \
+                            _rand1_shape(_dec_shape(param[k], dec), drop)
+                param_new['_raw_params'] = {
+                    'orig': param,
+                    'dec': dec,
+                    'drop': drop,
+                }
+                yield param_new
+
+
 class TestEinSumError(unittest.TestCase):
 
     @testing.numpy_cupy_raises()
@@ -148,10 +166,7 @@ class TestEinSumError(unittest.TestCase):
         xp.einsum('i-', xp.array([0, 0]))
 
 
-@testing.parameterize(
-*product_dict(testing.product(
-    {'shape_dec': [0, 1, 2], 'shape_drop': [0, 0.2, 0.8]}
-), [
+@testing.parameterize(*augument_einsum_testcases(
     {'shape_a': (2, 3), 'subscripts': 'ij'},  # do nothing
     {'shape_a': (2, 3), 'subscripts': '...'},  # do nothing
     {'shape_a': (2, 3), 'subscripts': 'ji'},  # transpose
@@ -167,9 +182,9 @@ class TestEinSumError(unittest.TestCase):
     {'shape_a': (2, 3, 4), 'subscripts': 'j...i->i...j'},  # swap axes
     {'shape_a': (3,), 'subscripts': 'i->'},  # sum
     {'shape_a': (3, 3), 'subscripts': 'ii'},  # trace
-    {'shape_a': (2, 2, 2, 2), 'subscripts': 'ijkj->kij'},  # trace
-    {'shape_a': (2, 2, 2, 2), 'subscripts': 'ijij->ij'},  # trace
-    {'shape_a': (2, 2, 2, 2), 'subscripts': 'jiji->ij'},  # trace
+    {'shape_a': (2, 2, 2, 2), 'subscripts': 'ijkj->kij'},
+    {'shape_a': (2, 2, 2, 2), 'subscripts': 'ijij->ij'},
+    {'shape_a': (2, 2, 2, 2), 'subscripts': 'jiji->ij'},
     {'shape_a': (2, 2, 2, 2), 'subscripts': 'ii...->...'},  # trace
     {'shape_a': (2, 2, 2, 2), 'subscripts': 'i...i->...'},  # trace
     {'shape_a': (2, 2, 2, 2), 'subscripts': '...ii->...'},  # trace
@@ -183,20 +198,12 @@ class TestEinSumError(unittest.TestCase):
 
     {'shape_a': (), 'subscripts': ''},  # do nothing
     {'shape_a': (), 'subscripts': '->'},  # do nothing
-])
-)
+))
 class TestEinSumUnaryOperation(unittest.TestCase):
-    # Avoid overflow
-    skip_dtypes = (numpy.bool_, numpy.int8, numpy.uint8)
-
-    def setUp(self):
-        self.shape_a = _rand1_shape(_dec_shape(self.shape_a, self.shape_dec), self.shape_drop)
 
     @testing.for_all_dtypes()
     @testing.numpy_cupy_allclose(contiguous_check=False)
     def test_einsum_unary(self, xp, dtype):
-        if dtype in self.skip_dtypes:
-            return xp.array([])
         a = testing.shaped_arange(self.shape_a, xp, dtype)
         return xp.einsum(self.subscripts, a)
 
@@ -204,20 +211,35 @@ class TestEinSumUnaryOperation(unittest.TestCase):
     @testing.for_all_dtypes()
     @testing.numpy_cupy_allclose(contiguous_check=False)
     def test_einsum_unary_views(self, xp, dtype):
-        if dtype in self.skip_dtypes:
-            return xp.array([])
         a = testing.shaped_arange(self.shape_a, xp, dtype)
         b = xp.einsum(self.subscripts, a)
 
         if b.ndim != 0:  # scalar is returned if numpy
-            b[...] = -testing.shaped_arange(b.shape, xp, dtype)
+            b[...] = 0
         return a
 
+    @testing.for_all_dtypes_combination(
+        ['dtype_a', 'dtype_out'],
+        no_complex=True)  # avoid ComplexWarning
+    @testing.numpy_cupy_allclose(contiguous_check=False)
+    def test_einsum_unary_dtype(self, xp, dtype_a, dtype_out):
+        a = testing.shaped_arange(self.shape_a, xp, dtype_a)
+        return xp.einsum(self.subscripts, a, dtype=dtype_out, casting='unsafe')
 
-@testing.parameterize(
-*product_dict(testing.product(
-    {'shape_dec': [0, 1, 2], 'shape_drop': [0, 0.2, 0.8]}
-), [
+
+class TestEinSumUnaryOperationWithScalar(unittest.TestCase):
+    @testing.for_all_dtypes()
+    @testing.numpy_cupy_allclose()
+    def test_scalar_int(self, xp, dtype):
+        return xp.asarray(xp.einsum('', 2, dtype=dtype))
+
+    @testing.for_all_dtypes()
+    @testing.numpy_cupy_allclose()
+    def test_scalar_float(self, xp, dtype):
+        return xp.asarray(xp.einsum('', 2.0, dtype=dtype))
+
+
+@testing.parameterize(*augument_einsum_testcases(
     # outer
     {'shape_a': (2,), 'shape_b': (3,),
      'subscripts': 'i,j'},
@@ -264,15 +286,10 @@ class TestEinSumUnaryOperation(unittest.TestCase):
      'subscripts': '...kl,k...', 'skip_overflow': True},
     {'shape_a': (1, 1, 1, 2, 3, 2), 'shape_b': (2, 3, 2, 2),
      'subscripts': '...lmn,lmno->...o'},
-])
-)
+))
 class TestEinSumBinaryOperation(unittest.TestCase):
     skip_dtypes = (numpy.bool_, numpy.int8, numpy.uint8)
     skip_overflow = False
-
-    def setUp(self):
-        self.shape_a = _rand1_shape(_dec_shape(self.shape_a, self.shape_dec), self.shape_drop)
-        self.shape_b = _rand1_shape(_dec_shape(self.shape_b, self.shape_dec), self.shape_drop)
 
     @testing.for_all_dtypes_combination(['dtype_a', 'dtype_b'], no_bool=True)
     @testing.numpy_cupy_allclose(contiguous_check=False)
@@ -285,7 +302,6 @@ class TestEinSumBinaryOperation(unittest.TestCase):
         return xp.einsum(self.subscripts, a, b)
 
 
-#@unittest.skip
 class TestEinSumBinaryOperationWithScalar(unittest.TestCase):
     @testing.for_all_dtypes()
     @testing.numpy_cupy_allclose(contiguous_check=False)
@@ -302,10 +318,9 @@ class TestEinSumBinaryOperationWithScalar(unittest.TestCase):
         return xp.asarray(xp.einsum('i,->', a, 4))
 
 
-@testing.parameterize(
-*product_dict(testing.product(
+@testing.parameterize(*augument_einsum_testcases(
+*testing.product_dict(testing.product(
     {
-        'shape_dec': [0, 1, 2], 'shape_drop': [0, 0.2, 0.8],
         'dtype_map': [(0, 0, 1), (0, 1, 0), (1, 0, 0)],
         'optimize': [
             False,
@@ -326,14 +341,9 @@ class TestEinSumBinaryOperationWithScalar(unittest.TestCase):
     {'shape_a': (2, 3, 4), 'shape_b': (2,), 'shape_c': (3, 4, 2),
      'subscripts': 'i...,i,...i->...i', 'skip_overflow': True},
 ])
-)
+))
 class TestEinSumTernaryOperation(unittest.TestCase):
     skip_dtypes = (numpy.bool_, numpy.int8, numpy.uint8)
-
-    def setUp(self):
-        self.shape_a = _rand1_shape(_dec_shape(self.shape_a, self.shape_dec), self.shape_drop)
-        self.shape_b = _rand1_shape(_dec_shape(self.shape_b, self.shape_dec), self.shape_drop)
-        self.shape_c = _rand1_shape(_dec_shape(self.shape_c, self.shape_dec), self.shape_drop)
 
     @testing.for_all_dtypes_combination(['dtype_x', 'dtype_y'], no_bool=True, no_float16=True)
     @testing.numpy_cupy_allclose(contiguous_check=False)
