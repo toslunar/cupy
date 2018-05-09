@@ -1,6 +1,7 @@
 import functools
 import itertools
 import operator
+import warnings
 
 import cupy
 from cupy.linalg.einsum_opt import _greedy_path
@@ -29,7 +30,7 @@ def _transpose_ex(a, axeses):
 
     Args:
         a
-        axeses (list of list of ints)
+        axeses (sequence of sequences of ints)
 
     Returns:
         p: a with its axes permutated. A writeable view is returned whenever
@@ -219,6 +220,102 @@ def _einsum_diagonals(input_subscripts, operands):
             )
 
 
+def _iter_path_pairs(path):
+    """Decompose path into binary path
+
+    Args:
+        path (sequence of tuples of ints)
+
+    Yields:
+        tuple of ints: pair (idx0, idx1) that represents the operation
+            {pop(idx0); pop(idx1); append();}
+    """
+
+    for indices in path:
+        assert all(idx >= 0 for idx in indices)
+        # [3, 1, 4, 9] -> [(9, 4), (-1, 3), (-1, 1)]
+        if len(indices) >= 2:
+            indices = list(sorted(indices, reverse=True))
+            yield indices[0], indices[1]
+            for idx in indices[2:]:
+                yield -1, idx
+
+
+def _flatten_transpose(a, axeses):
+    """Transpose and flatten each
+
+    Args:
+        a
+        axeses (sequence of sequences of ints)
+
+    Returns:
+        aT: a with its axes permutated and flatten
+        shapes: flattened shapes
+    """
+
+    shapes = [
+        [a.shape[axis] for axis in axes]
+        for axes in axeses
+    ]
+    return (
+        a.transpose(sum(axeses, ())).reshape(tuple(map(_prod, shapes))),
+        shapes
+    )
+
+
+def reduced_binary_einsum(op0, sub0, op1, sub1, sub_others):
+    set0 = set(sub0)
+    set1 = set(sub1)
+    assert len(set0) == len(sub0), "operand 0 should be reduced: diagonal"
+    assert len(set1) == len(sub1), "operand 1 should be reduced: diagonal"
+
+    set_others = set(sub_others)
+    shared = set0 & set1
+    batch_dims = shared & set_others
+    contract_dims = shared - batch_dims
+
+    bs0, cs0, ts0 = _make_transpose_axes(sub0, batch_dims, contract_dims)
+    bs1, cs1, ts1 = _make_transpose_axes(sub1, batch_dims, contract_dims)
+
+    tmp0, shapes0 = _flatten_transpose(op0, [bs0, ts0, cs0])
+    tmp1, shapes1 = _flatten_transpose(op1, [bs1, cs1, ts1])
+    shapes_out = shapes0[0] + shapes0[1] + shapes1[2]
+    assert shapes0[0] == shapes1[0]
+    op_out = xp.matmul(tmp0, tmp1).reshape(shapes_out)
+
+    sub_b = [sub0[i] for i in bs0]
+    assert sub_b == [sub1[i] for i in bs1]
+    sub_l = [sub0[i] for i in ts0]
+    sub_r = [sub1[i] for i in ts1]
+
+    sub_out = sub_b + sub_l + sub_r
+    assert set(sub_out) <= set_others, "operands should be reduced: unary sum"
+
+    return op_out, sub_out
+
+
+def _make_transpose_axes(sub, b_dims, c_dims):
+    bs = []
+    cs = []
+    ts = []
+    for i, s in enumerate(sub):
+        if s in b_dims:
+            bs.append((s, i))
+        elif s in c_dims:
+            cs.append((s, i))
+        else:
+            ts.append((s, i))
+    return (
+        _tuple_sorted_by_0(bs),
+        _tuple_sorted_by_0(cs),
+        _tuple_sorted_by_0(ts),
+    )
+
+
+def _tuple_sorted_by_0(zs):
+    return tuple(i for _, i in sorted(zs))
+
+
 def einsum(*operands, **kwargs):
     """einsum(subscripts, *operands, dtype=False)
 
@@ -394,59 +491,38 @@ def einsum(*operands, **kwargs):
         'optimal': _optimal_path,
     }
     if optimize is False:
-        path = [(0, 1)] * (len(operands) - 1)  # TODO(kataoka): fix
-    elif isinstance(optimize, str) and optimize in optimize_algorithms.keys():
-        input_sets = [set(sub) for sub in input_subscripts]
-        output_set = set(output_subscript)
-        memory_arg = 1e99
-        algo = optimize_algorithms[optimize]
-        path = algo(input_sets, output_set, dimension_dict, memory_arg)
+        path = [tuple(range(len(operands)))]
     elif len(optimize) and (optimize[0] == 'einsum_path'):
         path = optimize[1:]
     else:
-        raise TypeError("Did not understand the path (optimize): %s"
-                        % str(optimize))
+        try:
+            if len(optimize) == 2 and isinstance(optimize[1], (int, float)):
+                algo = optimize_algorithms[optimize[0]]
+                memory_limit = int(optimize[1])
+            else:
+                algo = optimize_algorithms[optimize]
+                memory_limit = 2 ** 31  # TODO(kataoka): fix?
+        except (TypeError, KeyError):  # unhashable type or not found
+            raise TypeError("Did not understand the path (optimize): %s"
+                            % str(optimize))
+        input_sets = [set(sub) for sub in input_subscripts]
+        output_set = set(output_subscript)
+        path = algo(input_sets, output_set, dimension_dict, memory_limit)
+        if any(len(indices) > 2 for indices in path):
+            warnings.warn(RuntimeWarning(
+                "memory efficient einsum is not supported yet"))
 
-    for idx0, idx1 in path:
-        # repeat binary einsum
-        assert idx0 < idx1
-        sub1 = input_subscripts.pop(idx1)
-        op1 = operands.pop(idx1)
-        sub0 = input_subscripts.pop(idx0)
+    for idx0, idx1 in _iter_path_pairs(path):
+        # "reduced" binary einsum
         op0 = operands.pop(idx0)
-
-        set0 = set(sub0)
-        set1 = set(sub1)
-        assert len(set0) == len(sub0)
-        assert len(set1) == len(sub1)
-
-        set_out = set(_concat([output_subscript] + input_subscripts))
-        shared = set0 & set1
-        batch_dims = shared & set_out
-        contract_dims = shared - batch_dims
-
-        bs0, cs0, ts0 = _make_transpose_axes(sub0, batch_dims, contract_dims)
-        bs1, cs1, ts1 = _make_transpose_axes(sub1, batch_dims, contract_dims)
-
-        batch_size = _prod([dimension_dict[s] for s in batch_dims])
-        contract_size = _prod([dimension_dict[s] for s in contract_dims])
-
-        tmp0 = op0.transpose(bs0 + ts0 + cs0).reshape(
-            batch_size, -1, contract_size)
-        tmp1 = op1.transpose(bs1 + cs1 + ts1).reshape(
-            batch_size, contract_size, -1)
-        tmp_out = cupy.matmul(tmp0, tmp1)
-
-        sub_b = [sub0[i] for i in bs0]
-        assert sub_b == [sub1[i] for i in bs1]
-        sub_l = [sub0[i] for i in ts0]
-        sub_r = [sub1[i] for i in ts1]
-
-        sub_out = sub_b + sub_l + sub_r
-        op_out = tmp_out.reshape([dimension_dict[s] for s in sub_out])
-
-        input_subscripts.append(sub_out)
+        sub0 = input_subscripts.pop(idx0)
+        op1 = operands.pop(idx1)
+        sub1 = input_subscripts.pop(idx1)
+        sub_others = _concat([output_subscript] + input_subscripts)
+        op_out, sub_out = reduced_binary_einsum(
+            op0, sub0, op1, sub1, sub_others)
         operands.append(op_out)
+        input_subscripts.append(sub_out)
 
     # unary einsum at last
     op0, = operands
@@ -463,25 +539,3 @@ def einsum(*operands, **kwargs):
     ])
     assert returns_view or op_out.dtype == result_dtype
     return op_out
-
-
-def _tuple_sorted_by_0(zs):
-    return tuple(i for _, i in sorted(zs))
-
-
-def _make_transpose_axes(sub, b_dims, c_dims):
-    bs = []
-    cs = []
-    ts = []
-    for i, s in enumerate(sub):
-        if s in b_dims:
-            bs.append((s, i))
-        elif s in c_dims:
-            cs.append((s, i))
-        else:
-            ts.append((s, i))
-    return (
-        _tuple_sorted_by_0(bs),
-        _tuple_sorted_by_0(cs),
-        _tuple_sorted_by_0(ts),
-    )
