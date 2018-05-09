@@ -1,4 +1,5 @@
 import unittest
+import warnings
 
 import numpy
 
@@ -460,5 +461,13 @@ class TestEinSumLarge(unittest.TestCase):
 
     @testing.numpy_cupy_allclose(contiguous_check=False)
     def test_einsum(self, xp):
-        # I hope there's no problem with np.einsum for these cases...
-        return xp.einsum(*self.operands, optimize=self.opt)
+        # TODO(kataoka): support memory efficient cupy.einsum
+        with warnings.catch_warnings(record=True) as ws:
+            # I hope there's no problem with np.einsum for these cases...
+            out = xp.einsum(*self.operands, optimize=self.opt)
+            if not isinstance(self.opt, tuple):  # without memory limit
+                self.assertEqual(len(ws), 0)
+            else:
+                for w in ws:
+                    self.assertIn("memory", str(w.message))
+        return out
