@@ -281,7 +281,7 @@ def reduced_binary_einsum(op0, sub0, op1, sub1, sub_others):
     tmp1, shapes1 = _flatten_transpose(op1, [bs1, cs1, ts1])
     shapes_out = shapes0[0] + shapes0[1] + shapes1[2]
     assert shapes0[0] == shapes1[0]
-    op_out = xp.matmul(tmp0, tmp1).reshape(shapes_out)
+    op_out = cupy.matmul(tmp0, tmp1).reshape(shapes_out)
 
     sub_b = [sub0[i] for i in bs0]
     assert sub_b == [sub1[i] for i in bs1]
