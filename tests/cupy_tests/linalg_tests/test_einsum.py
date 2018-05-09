@@ -425,20 +425,22 @@ class TestEinSumTernaryOperation(unittest.TestCase):
         return out
 
 
-@testing.parameterize(
+@testing.parameterize(*([
     # memory constraint
     {'subscript': 'a,b,c->abc', 'opt': ('greedy', 0)},
     {'subscript': 'acdf,jbje,gihb,hfac', 'opt': ('greedy', 0)},
+] + testing.product({'subscript': [
     # long paths
-    {'subscript': 'acdf,jbje,gihb,hfac,gfac,gifabc,hfac', 'opt': True},
-    {'subscript': 'chd,bde,agbc,hiad,bdi,cgh,agdb', 'opt': True},
+    'acdf,jbje,gihb,hfac,gfac,gifabc,hfac',
+    'chd,bde,agbc,hiad,bdi,cgh,agdb',
     # edge cases
-    {'subscript': 'eb,cb,fb->cef', 'opt': True},
-    {'subscript': 'dd,fb,be,cdb->cef', 'opt': True},
-    {'subscript': 'bca,cdb,dbf,afc->', 'opt': True},
-    {'subscript': 'dcc,fce,ea,dbf->ab', 'opt': True},
-    {'subscript': 'a,ac,ab,ad,cd,bd,bc->', 'opt': True},
-)
+    'eb,cb,fb->cef',
+    'dd,fb,be,cdb->cef',
+    'bca,cdb,dbf,afc->',
+    'dcc,fce,ea,dbf->ab',
+    'a,ac,ab,ad,cd,bd,bc->',
+], 'opt': ['greedy', 'optimal'],
+})))
 @testing.with_requires('numpy>=1.12')
 class TestEinSumLarge(unittest.TestCase):
 
