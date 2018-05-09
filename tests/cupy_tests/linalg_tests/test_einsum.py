@@ -465,9 +465,10 @@ class TestEinSumLarge(unittest.TestCase):
         with warnings.catch_warnings(record=True) as ws:
             # I hope there's no problem with np.einsum for these cases...
             out = xp.einsum(*self.operands, optimize=self.opt)
-            if not isinstance(self.opt, tuple):  # without memory limit
-                self.assertEqual(len(ws), 0)
-            else:
+            if xp is not numpy and \
+                    isinstance(self.opt, tuple):  # with memory limit
                 for w in ws:
                     self.assertIn("memory", str(w.message))
+            else:
+                self.assertEqual(len(ws), 0)
         return out
