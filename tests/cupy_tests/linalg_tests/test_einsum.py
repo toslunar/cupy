@@ -258,7 +258,11 @@ class TestEinSumUnaryOperation(unittest.TestCase):
     @testing.numpy_cupy_allclose(contiguous_check=False)
     def test_einsum_unary(self, xp, dtype):
         a = testing.shaped_arange(self.shape_a, xp, dtype)
-        return xp.einsum(self.subscripts, a)
+        out = xp.einsum(self.subscripts, a)
+        if xp is not numpy:
+            optimized_out = xp.einsum(self.subscripts, a, optimize=True)
+            testing.assert_allclose(optimized_out, out)
+        return out
 
     @testing.for_all_dtypes()
     @testing.numpy_cupy_equal()
@@ -281,7 +285,7 @@ class TestEinSumUnaryOperationWithScalar(unittest.TestCase):
     @testing.for_all_dtypes()
     @testing.numpy_cupy_allclose()
     def test_scalar_int(self, xp, dtype):
-        return xp.asarray(xp.einsum('', 2, dtype=dtype))
+        return xp.asarray(xp.einsum('->', 2, dtype=dtype))
 
     @testing.for_all_dtypes()
     @testing.numpy_cupy_allclose()
