@@ -156,7 +156,26 @@ def _fft(a, s, axes, norm, direction, value_type='C2C', overwrite_x=False,
             dim = a.ndim
         else:
             dim = len(s)
+<<<<<<< HEAD
         axes = [i for i in six.moves.range(-dim, 0)]
+||||||| parent of 22a423033... Merge pull request #3264 from leofang/fix_fft_empty_axes
+        axes = [i for i in range(-dim, 0)]
+    else:
+        axes = tuple(axes)
+    if not axes:
+        return a
+    a = _convert_dtype(a, value_type)
+=======
+        axes = [i for i in range(-dim, 0)]
+    else:
+        axes = tuple(axes)
+    if not axes:
+        if value_type == 'C2C':
+            return a
+        else:
+            raise IndexError('list index out of range')
+    a = _convert_dtype(a, value_type)
+>>>>>>> 22a423033... Merge pull request #3264 from leofang/fix_fft_empty_axes
     a = _cook_shape(a, s, axes, value_type)
 
     if value_type == 'C2C':
@@ -381,6 +400,19 @@ def _fftn(a, s, axes, norm, direction, value_type='C2C', order='A', plan=None,
         raise ValueError('Invalid norm value %s, should be None or "ortho".'
                          % norm)
 
+<<<<<<< HEAD
+||||||| parent of 22a423033... Merge pull request #3264 from leofang/fix_fft_empty_axes
+    axes, axes_sorted = _prep_fftn_axes(a.ndim, s, axes)
+    if not axes_sorted:
+        return a
+=======
+    axes, axes_sorted = _prep_fftn_axes(a.ndim, s, axes)
+    if not axes_sorted:
+        if value_type == 'C2C':
+            return a
+        else:
+            raise IndexError('list index out of range')
+>>>>>>> 22a423033... Merge pull request #3264 from leofang/fix_fft_empty_axes
     a = _convert_dtype(a, value_type)
 
     if (s is not None) and (axes is not None) and len(s) != len(axes):
