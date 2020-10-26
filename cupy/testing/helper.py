@@ -199,6 +199,10 @@ def _make_decorator(check_func, name, type_check, contiguous_check,
     assert sp_name is None or isinstance(sp_name, str)
     assert scipy_name is None or isinstance(scipy_name, str)
 
+    if accept_error:
+        warnings.warn("ignoring accept_error=}")
+        accept_error = False
+
     def decorator(impl):
         @functools.wraps(impl)
         def test_func(self, *args, **kw):
