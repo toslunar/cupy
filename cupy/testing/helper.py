@@ -218,8 +218,8 @@ def _wraps_partial(wrapped, *names):
     # Only `wrapped` function have args of `names`.
     def decorator(impl):
         impl = functools.wraps(wrapped)(impl)
-        impl.__signature__ = inspect.signature(functools.partial(
-            wrapped, **{name: None for name in names})
+        impl.__signature__ = inspect.signature(
+            functools.partial(wrapped, **{name: None for name in names}))
         return impl
     return decorator
 
