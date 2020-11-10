@@ -225,6 +225,7 @@ def diag_indices(n, ndim=2):
     >>> a
     array([[[1, 0],
             [0, 0]],
+    <BLANKLINE>
            [[0, 0],
             [0, 1]]])
 
