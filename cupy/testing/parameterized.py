@@ -91,10 +91,16 @@ def parameterize(*params):
     """
     def f(cls):
         if issubclass(cls, unittest.TestCase):
-            deco = _bundle.make_decorator(
-                lambda base: _parameterize_test_case_generator(base, params))
-        else:
-            deco = _pytest_impl.parameterize(*params)
+            bases = list(cls.__bases__)
+            try:
+                # hope direct parent
+                bases.remove(unittest.TestCase)
+            except ValueError:
+                deco = _bundle.make_decorator(
+                    lambda base: _parameterize_test_case_generator(base, params))
+                return deco(cls)
+            cls = type(cls.__name__, tuple(bases), dict(cls.__dict__))
+        deco = _pytest_impl.parameterize(*params)
         return deco(cls)
     return f
 
