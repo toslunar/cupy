@@ -272,7 +272,7 @@ def lstsq(a, b, rcond='warn'):
     zh = b.T.conj() @ u
     x = ((zh * s1) @ vh).T.conj()
     # Calculate squared Euclidean 2-norm for each column in b - a*x
-    if rank != n or m <= n:
+    if m <= n or rank != n:
         resids = cupy.empty((0,), dtype=s.dtype)
     else:
         resids = cupy.atleast_1d(_nrm2_last_axis(b.T) - _nrm2_last_axis(zh))
