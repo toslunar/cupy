@@ -1,6 +1,7 @@
 import unittest
 
 import numpy
+import pytest
 
 import cupy
 from cupy import testing
@@ -65,8 +66,13 @@ class TestArrayUfunc:
     def test_add(self):
         x = cupy.array([3, 7])
         y = MockArray()
-        print(x + y)
-        print(y + x)
+        assert x + y == ('add', (x, y), {})
+        assert y + x == ('add', (y, x), {})
+        y2 = y
+        y2 += x
+        assert y2 == ('add', (y, x), {'out': y})
+        with pytest.raises(TypeError):
+            x += y
 
 
 class MockArray2:
