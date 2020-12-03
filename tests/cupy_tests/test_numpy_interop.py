@@ -74,6 +74,8 @@ class TestArrayUfunc:
         with pytest.raises(TypeError):
             x += y
 
+    @pytest.mark.xfail(
+        reason='cupy.ndarray.__array_ufunc__ does not support gufuncs yet')
     def test_matmul(self):
         x = cupy.array([3, 7])
         y = MockArray()
