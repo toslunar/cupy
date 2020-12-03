@@ -89,5 +89,9 @@ Linear Algebra
    :toctree: generated/
    :nosignatures:
 
-   cupyx.scipy.sparse.linalg.lsqr
    cupyx.scipy.sparse.linalg.norm
+   cupyx.scipy.sparse.linalg.cg
+   cupyx.scipy.sparse.linalg.gmres
+   cupyx.scipy.sparse.linalg.lsqr
+   cupyx.scipy.sparse.linalg.eigsh
+   cupyx.scipy.sparse.linalg.svds

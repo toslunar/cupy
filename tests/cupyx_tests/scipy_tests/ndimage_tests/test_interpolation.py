@@ -1,5 +1,3 @@
-import unittest
-
 import numpy
 import pytest
 
@@ -28,7 +26,7 @@ except ImportError:
 }))
 @testing.gpu
 @testing.with_requires('scipy')
-class TestMapCoordinates(unittest.TestCase):
+class TestMapCoordinates:
 
     _multiprocess_can_split = True
 
@@ -39,7 +37,7 @@ class TestMapCoordinates(unittest.TestCase):
             return_value = map_coordinates(a, coordinates, output, self.order,
                                            self.mode, self.cval,
                                            self.prefilter)
-            self.assertTrue(return_value is None or return_value is output)
+            assert return_value is None or return_value is output
             return output
         else:
             return map_coordinates(a, coordinates, self.output, self.order,
@@ -100,7 +98,7 @@ class TestMapCoordinates(unittest.TestCase):
 }))
 @testing.gpu
 @testing.with_requires('scipy')
-class TestAffineTransform(unittest.TestCase):
+class TestAffineTransform:
 
     _multiprocess_can_split = True
 
@@ -119,7 +117,7 @@ class TestAffineTransform(unittest.TestCase):
                                             self.output_shape, output,
                                             self.order, self.mode, self.cval,
                                             self.prefilter)
-            self.assertTrue(return_value is None or return_value is output)
+            assert return_value is None or return_value is output
             return output
         else:
             return affine_transform(a, matrix, self.offset, self.output_shape,
@@ -163,7 +161,7 @@ class TestAffineTransform(unittest.TestCase):
 
 @testing.gpu
 @testing.with_requires('scipy')
-class TestAffineExceptions(unittest.TestCase):
+class TestAffineExceptions:
 
     def test_invalid_affine_ndim(self):
         ndimage_modules = (scipy.ndimage, cupyx.scipy.ndimage)
@@ -190,7 +188,7 @@ class TestAffineExceptions(unittest.TestCase):
 
 @testing.gpu
 @testing.with_requires('opencv-python')
-class TestAffineTransformOpenCV(unittest.TestCase):
+class TestAffineTransformOpenCV:
 
     _multiprocess_can_split = True
 
@@ -220,7 +218,7 @@ class TestAffineTransformOpenCV(unittest.TestCase):
 }))
 @testing.gpu
 @testing.with_requires('scipy')
-class TestRotate(unittest.TestCase):
+class TestRotate:
 
     _multiprocess_can_split = True
 
@@ -233,7 +231,7 @@ class TestRotate(unittest.TestCase):
             return_value = rotate(a, self.angle, self.axes,
                                   self.reshape, output, self.order,
                                   self.mode, self.cval, self.prefilter)
-            self.assertTrue(return_value is None or return_value is output)
+            assert return_value is None or return_value is output
             return output
         else:
             return rotate(a, self.angle, self.axes,
@@ -273,7 +271,7 @@ class TestRotate(unittest.TestCase):
 @testing.gpu
 # Scipy older than 1.3.0 raises IndexError instead of ValueError
 @testing.with_requires('scipy>=1.3.0')
-class TestRotateExceptions(unittest.TestCase):
+class TestRotateExceptions:
 
     def test_rotate_invalid_plane(self):
         ndimage_modules = (scipy.ndimage, cupyx.scipy.ndimage)
@@ -294,7 +292,7 @@ class TestRotateExceptions(unittest.TestCase):
 )
 @testing.gpu
 @testing.with_requires('scipy')
-class TestRotateAxes(unittest.TestCase):
+class TestRotateAxes:
 
     _multiprocess_can_split = True
 
@@ -308,7 +306,7 @@ class TestRotateAxes(unittest.TestCase):
 
 @testing.gpu
 @testing.with_requires('opencv-python')
-class TestRotateOpenCV(unittest.TestCase):
+class TestRotateOpenCV:
 
     _multiprocess_can_split = True
 
@@ -343,7 +341,7 @@ class TestRotateOpenCV(unittest.TestCase):
 ))
 @testing.gpu
 @testing.with_requires('scipy')
-class TestShift(unittest.TestCase):
+class TestShift:
 
     _multiprocess_can_split = True
 
@@ -353,7 +351,7 @@ class TestShift(unittest.TestCase):
             output = xp.empty_like(a)
             return_value = shift(a, self.shift, output, self.order,
                                  self.mode, self.cval, self.prefilter)
-            self.assertTrue(return_value is None or return_value is output)
+            assert return_value is None or return_value is output
             return output
         else:
             return shift(a, self.shift, self.output, self.order,
@@ -403,7 +401,7 @@ class TestShift(unittest.TestCase):
     'cval': [cupy.nan, cupy.inf, -cupy.inf],
 }))
 @testing.gpu
-class TestInterpolationInvalidCval(unittest.TestCase):
+class TestInterpolationInvalidCval:
 
     def _prep_output(self, a):
         if self.output == 'empty':
@@ -482,7 +480,7 @@ class TestInterpolationInvalidCval(unittest.TestCase):
 
 @testing.gpu
 @testing.with_requires('opencv-python')
-class TestShiftOpenCV(unittest.TestCase):
+class TestShiftOpenCV:
 
     _multiprocess_can_split = True
 
@@ -509,7 +507,7 @@ class TestShiftOpenCV(unittest.TestCase):
 }))
 @testing.gpu
 @testing.with_requires('scipy')
-class TestZoom(unittest.TestCase):
+class TestZoom:
 
     _multiprocess_can_split = True
 
@@ -520,7 +518,7 @@ class TestZoom(unittest.TestCase):
                           self.mode, self.cval, self.prefilter)
             return_value = zoom(a, self.zoom, output, self.order,
                                 self.mode, self.cval, self.prefilter)
-            self.assertTrue(return_value is None or return_value is output)
+            assert return_value is None or return_value is output
             return output
         else:
             return zoom(a, self.zoom, self.output, self.order,
@@ -562,7 +560,7 @@ class TestZoom(unittest.TestCase):
 )
 @testing.gpu
 @testing.with_requires('opencv-python')
-class TestZoomOpenCV(unittest.TestCase):
+class TestZoomOpenCV:
 
     _multiprocess_can_split = True
 
@@ -576,3 +574,66 @@ class TestZoomOpenCV(unittest.TestCase):
         else:
             output_shape = numpy.rint(numpy.multiply(a.shape, self.zoom))
             return cv2.resize(a, tuple(output_shape.astype(int)))
+
+
+@testing.parameterize(*testing.product({
+    'mode': ['mirror', 'wrap', 'reflect'],
+    'order': [0, 1, 2, 3, 4, 5],
+    'dtype': [numpy.uint8, numpy.float64],
+    'output': [numpy.float64, numpy.float32],
+    'axis': [0, 1, 2, -1],
+}))
+@testing.gpu
+@testing.with_requires('scipy')
+class TestSplineFilter1d:
+    @testing.numpy_cupy_allclose(atol=1e-5, rtol=1e-5, scipy_name='scp')
+    def test_spline_filter1d(self, xp, scp):
+        x = testing.shaped_random((16, 12, 11), dtype=self.dtype, xp=xp)
+        return scp.ndimage.spline_filter1d(x, order=self.order, axis=self.axis,
+                                           output=self.output, mode=self.mode)
+
+    @testing.for_CF_orders(name='array_order')
+    @testing.numpy_cupy_allclose(atol=1e-5, rtol=1e-5, scipy_name='scp')
+    def test_spline_filter1d_output(self, xp, scp, array_order):
+        x = testing.shaped_random((16, 12, 11), dtype=self.dtype, xp=xp,
+                                  order=array_order)
+        output = xp.empty(x.shape, dtype=self.output, order=array_order)
+        scp.ndimage.spline_filter1d(x, order=self.order, axis=self.axis,
+                                    output=output, mode=self.mode)
+        return output
+
+
+@testing.parameterize(*testing.product({
+    'mode': ['mirror', 'wrap', 'reflect'],
+    'order': [0, 1, 2, 3, 4, 5],
+    'dtype': [numpy.uint8, numpy.float64],
+    'output': [numpy.float64, numpy.float32],
+}))
+@testing.gpu
+@testing.with_requires('scipy')
+class TestSplineFilter:
+    @testing.numpy_cupy_allclose(atol=1e-4, rtol=1e-4, scipy_name='scp')
+    def test_spline_filter(self, xp, scp):
+        x = testing.shaped_random((16, 12, 11), dtype=self.dtype, xp=xp)
+        if self.order < 2:
+            with pytest.raises(RuntimeError):
+                scp.ndimage.spline_filter(x, order=self.order,
+                                          output=self.output, mode=self.mode)
+            return xp.asarray([])
+        return scp.ndimage.spline_filter(x, order=self.order,
+                                         output=self.output, mode=self.mode)
+
+    @testing.for_CF_orders(name='array_order')
+    @testing.numpy_cupy_allclose(atol=1e-4, rtol=1e-4, scipy_name='scp')
+    def test_spline_filter_with_output(self, xp, scp, array_order):
+        x = testing.shaped_random((16, 12, 11), dtype=self.dtype, xp=xp,
+                                  order=array_order)
+        output = xp.empty(x.shape, dtype=self.output, order=array_order)
+        if self.order < 2:
+            with pytest.raises(RuntimeError):
+                scp.ndimage.spline_filter(x, order=self.order, output=output,
+                                          mode=self.mode)
+            return xp.asarray([])
+        scp.ndimage.spline_filter(x, order=self.order, output=output,
+                                  mode=self.mode)
+        return output
