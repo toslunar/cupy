@@ -79,7 +79,7 @@ cdef inline _should_use_rop(x, y):
 
 
 
-cdef tuple _HANDLED_TYPES, _KNOWN_TYPES
+cdef tuple _HANDLED_TYPES
 
 
 cdef class ndarray:
@@ -1771,7 +1771,6 @@ cpdef strides_t _get_strides_for_order_K(ndarray x, dtype, shape=None):
 
 
 _HANDLED_TYPES = (ndarray, numpy.ndarray)
-_KNOWN_TYPES = (ndarray, numbers.Number)
 
 
 # =============================================================================
