@@ -56,11 +56,16 @@ from cupy_backends.cuda.libs cimport cublas
 
 @cython.profile(False)
 cdef inline _should_use_rop(x, y):
-    if hasattr(y, '__array_ufunc__'):
-        return not isinstance(y, _KNOWN_TYPES)
-    xp = getattr(x, '__array_priority__', 0)
-    yp = getattr(y, '__array_priority__', 0)
-    return xp < yp
+    try:
+        y_ufunc = y.__array_ufunc__
+    except AttributeError:
+        xp = getattr(x, '__array_priority__', 0)
+        yp = getattr(y, '__array_priority__', 0)
+        return xp < yp
+    else:
+        if y_ufunc is None:
+            return True
+
 
 
 cdef tuple _HANDLED_TYPES, _KNOWN_TYPES
