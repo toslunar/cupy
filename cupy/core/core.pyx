@@ -1068,7 +1068,7 @@ cdef class ndarray:
         elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return numpy.reminder(x, y)
+            return numpy.remainder(x, y)
 
     def __divmod__(x, y):
         if isinstance(y, ndarray):
