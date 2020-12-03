@@ -1775,7 +1775,7 @@ cpdef strides_t _get_strides_for_order_K(ndarray x, dtype, shape=None):
     return strides
 
 
-_HANDLED_TYPES = (ndarray, numpy.ndarray)
+_HANDLED_TYPES = (ndarray, numpy.ndarray, numbers.Number)
 
 
 # =============================================================================
