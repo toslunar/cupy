@@ -62,9 +62,20 @@ cdef inline _should_use_rop(x, y):
         xp = getattr(x, '__array_priority__', 0)
         yp = getattr(y, '__array_priority__', 0)
         return xp < yp
-    else:
-        if y_ufunc is None:
-            return True
+    return y_ufunc is None
+
+
+# (op) lhs=cupy, rhs:
+# scalar, sparse (undef) -> op (or ufunc), rop
+# ndarray -> op (or ufunc)
+# ufunc -> ufunc
+# optout -> rop
+# 
+# (rop) rhs=cupy, lhs
+# scalar, sparse (undef) -> rop (or ufunc), op (should not happen)
+# ndarray -> (cannot happen)
+# ufunc (impl option #2) -> (cannot happen ~~op (or ufunc)~~)
+# optout -> ???
 
 
 
@@ -997,95 +1008,124 @@ cdef class ndarray:
     # Arithmetic:
 
     def __add__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _math._add(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _math._add(x, y)
+            return numpy.add(x, y)
 
     def __sub__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _math._subtract(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _math._subtract(x, y)
+            return numpy.subtract(x, y)
 
     def __mul__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _math._multiply(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _math._multiply(x, y)
+            return numpy.multiply(x, y)
 
     def __matmul__(x, y):
-        if _should_use_rop(x, y):
+        # TODO(kataoka): Support matmul (gufunc) in __array_ufunc__
+        if not isinstance(y, ndarray) and _should_use_rop(x, y):
             return NotImplemented
         else:
             return _linalg.matmul(x, y)
 
     def __div__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _math._divide(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _math._divide(x, y)
+            return numpy.divide(x, y)
 
     def __truediv__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _math._true_divide(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _math._true_divide(x, y)
+            return numpy.true_divide(x, y)
 
     def __floordiv__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _math._floor_divide(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _math._floor_divide(x, y)
+            return numpy.floor_divide(x, y)
 
     def __mod__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _math._remainder(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _math._remainder(x, y)
+            return numpy.reminder(x, y)
 
     def __divmod__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return divmod(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return divmod(x, y)
+            return numpy.divmod(x, y)
 
     def __pow__(x, y, modulo):
         # Note that we ignore the modulo argument as well as NumPy.
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _math._power(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _math._power(x, y)
+            return numpy.power(x, y)
 
     def __lshift__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _binary._left_shift(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _binary._left_shift(x, y)
+            return numpy.left_shift(x, y)
 
     def __rshift__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _binary._right_shift(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _binary._right_shift(x, y)
+            return numpy.right_shift(x, y)
 
     def __and__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _binary._bitwise_and(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _binary._bitwise_and(x, y)
+            return numpy.bitwise_and(x, y)
 
     def __or__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _binary._bitwise_or(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _binary._bitwise_or(x, y)
+            return numpy.bitwise_or(x, y)
 
     def __xor__(x, y):
-        if _should_use_rop(x, y):
+        if isinstance(y, ndarray):
+            return _binary._bitwise_xor(x, y)
+        elif _should_use_rop(x, y):
             return NotImplemented
         else:
-            return _binary._bitwise_xor(x, y)
+            return numpy.bitwise_xor(x, y)
 
     # Arithmetic, in-place:
 
