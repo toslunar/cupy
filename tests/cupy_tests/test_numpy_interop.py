@@ -54,7 +54,7 @@ class MockArray(numpy.lib.mixins.NDArrayOperatorsMixin):
     __array_priority__ = 20  # less than cupy.ndarray.__array_priority__
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        assert method == "call"
+        assert method == '__call__'
         name = ufunc.__name__
         return name, inputs, kwargs
 
