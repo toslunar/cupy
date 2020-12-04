@@ -1,3 +1,4 @@
+import contextlib
 import unittest
 
 import pytest
@@ -6,6 +7,10 @@ import numpy
 import cupy
 import cupyx
 from cupy import testing
+
+
+# TODO(kataoka): Python 3.7
+_nullcontext = contextlib.suppress
 
 
 @testing.parameterize(
@@ -302,8 +307,10 @@ class Poly1dTestBase(unittest.TestCase):
 class TestPoly1dPolynomialArithmetic(Poly1dTestBase):
 
     @testing.for_all_dtypes()
-    @testing.numpy_cupy_allclose(rtol=1e-4, accept_error=TypeError)
+    @testing.numpy_cupy_allclose(rtol=1e-4)
     def test_poly1d_arithmetic(self, xp, dtype):
+        if 'poly1d' not in (self.type_l, self.type_r):
+            pytest.skip()
         a1 = self._get_input(xp, self.type_l, dtype)
         a2 = self._get_input(xp, self.type_r, dtype)
         return self.func(a1, a2)
@@ -361,7 +368,7 @@ class TestPoly1dArithmeticInvalid(Poly1dTestBase):
 class TestPoly1dRoutines(Poly1dTestBase):
 
     @testing.for_all_dtypes()
-    @testing.numpy_cupy_allclose(rtol=1e-4, accept_error=TypeError)
+    @testing.numpy_cupy_allclose(rtol=1e-4)
     def test_poly1d_routine(self, xp, dtype):
         func = getattr(xp, self.fname)
         a1 = self._get_input(xp, self.type_l, dtype)
@@ -434,16 +441,16 @@ class TestPolyArithmeticShapeCombination(unittest.TestCase):
 }))
 class TestPolyArithmeticDiffTypes(unittest.TestCase):
 
-    @testing.for_all_dtypes_combination(names=['dtype1', 'dtype2'])
-    @testing.numpy_cupy_allclose(rtol=1e-5, accept_error=TypeError)
+    @testing.for_all_dtypes_combination(names=['dtype1', 'dtype2'], no_bool=True)
+    @testing.numpy_cupy_allclose(rtol=1e-5)
     def test_polyroutine_diff_types_array(self, xp, dtype1, dtype2):
         func = getattr(xp, self.fname)
         a = testing.shaped_arange((10,), xp, dtype1)
         b = testing.shaped_arange((5,), xp, dtype2)
         return func(a, b)
 
-    @testing.for_all_dtypes_combination(names=['dtype1', 'dtype2'])
-    @testing.numpy_cupy_allclose(rtol=1e-5, accept_error=TypeError)
+    @testing.for_all_dtypes_combination(names=['dtype1', 'dtype2'], no_bool=True)
+    @testing.numpy_cupy_allclose(rtol=1e-5)
     def test_polyroutine_diff_types_poly1d(self, xp, dtype1, dtype2):
         func = getattr(xp, self.fname)
         a = testing.shaped_arange((10,), xp, dtype1)
@@ -473,11 +480,15 @@ class TestPolyfitParametersCombinations(unittest.TestCase):
 
     @testing.for_all_dtypes()
     @testing.numpy_cupy_allclose(
-        atol=1e-9, accept_error=TypeError, contiguous_check=False)
+        atol=1e-9)
     def test_polyfit_default(self, xp, dtype):
         x = testing.shaped_arange(self.shape1, xp, dtype)
         y = testing.shaped_arange(self.shape2, xp, dtype)
         w = x if self.weighted else None
+        if dtype == numpy.float16:
+            with pytest.raises(TypeError):
+                xp.polyfit(x, y, self.deg, self.rcond, w=w)
+            return xp.array(True)
         return xp.polyfit(x, y, self.deg, self.rcond, w=w)
 
     @testing.for_all_dtypes(no_float16=True)
@@ -614,20 +625,25 @@ class TestPolyfitInvalid(unittest.TestCase):
 class TestPolyfitDiffTypes(unittest.TestCase):
 
     @testing.for_all_dtypes_combination(
-        names=['dtype1', 'dtype2'], no_bool=True, full=True)
-    @testing.numpy_cupy_allclose(rtol=1e-1, atol=1e-1, accept_error=TypeError)
+        names=['dtype1', 'dtype2'], no_bool=True, no_float16=True, full=True)
+    @testing.numpy_cupy_allclose(rtol=1e-1, atol=1e-1)
     def test_polyfit_unweighted_diff_types(self, xp, dtype1, dtype2):
         x = testing.shaped_arange((5,), xp, dtype1)
         y = testing.shaped_arange((5,), xp, dtype2)
         return xp.polyfit(x, y, 5)
 
     @testing.for_all_dtypes_combination(
-        names=['dtype1', 'dtype2', 'dtype3'], no_bool=True, full=True)
-    @testing.numpy_cupy_allclose(atol=1e-0, accept_error=TypeError)
+        names=['dtype1', 'dtype2', 'dtype3'],
+        no_bool=True, no_float16=True, full=True)
+    @testing.numpy_cupy_allclose(atol=1e-0)
     def test_polyfit_weighted_diff_types(self, xp, dtype1, dtype2, dtype3):
         x = testing.shaped_arange((5,), xp, dtype1)
         y = testing.shaped_arange((5,), xp, dtype2)
         w = testing.shaped_arange((5,), xp, dtype3)
+        if xp.iscomplexobj(w) and (xp.isrealobj(x) or xp.isrealobj(y)):
+            with pytest.raises(TypeError):
+                xp.polyfit(x, y, 5, w=w)
+            return xp.array(True)
         return xp.polyfit(x, y, 5, w=w)
 
 
