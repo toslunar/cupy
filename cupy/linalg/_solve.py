@@ -269,13 +269,15 @@ def lstsq(a, b, rcond='warn'):
     rank = s.size - sing_vals.sum(dtype=numpy.int32)
 
     # Solve the least-squares solution
-    zh = b.T.conj() @ u
-    x = ((zh * s1) @ vh).T.conj()
+    # x = vh.T.conj() @ diag(s1) @ u.T.conj() @ b
+    zh = b.T.conj().dot(u) * s1
+    x = zh.dot(vh).T.conj()
     # Calculate squared Euclidean 2-norm for each column in b - a*x
     if m <= n or rank != n:
         resids = cupy.empty((0,), dtype=s.dtype)
     else:
-        resids = cupy.atleast_1d(_nrm2_last_axis(b.T) - _nrm2_last_axis(zh))
+        e = b - a.dot(x)
+        resids = cupy.atleast_1d(_nrm2_last_axis(e.T))
     return x, resids, rank, s
 
 
