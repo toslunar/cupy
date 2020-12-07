@@ -30,15 +30,12 @@ def _assert_nd_squareness(*arrays):
 
 # similar to numpy.linalg.linalg._commonType
 def common_type(*arrays):
-    dtypes = [arr.dtype for arr in arrays]
-    if 'float16' in dtypes:
-        raise TypeError('float16 is unsupported in linalg')
-    compute_dtype = numpy.result_type('float32', *dtypes)
-    # numpy casts integer types to float64
-    inexact_dtypes = [
-        dtype if dtype.kind in 'fc' else 'float64'
-        for dtype in dtypes]
-    result_dtype = numpy.result_type(*inexact_dtypes)
+    result_dtype = numpy.dtype(cupy.common_type(*arrays))
+    compute_dtype = result_dtype
+    # compute in single or double precision.
+    # CuPy array does not support `longdouble` dtype.
+    if compute_dtype == numpy.float16:
+        compute_dtype = numpy.dtype(numpy.float32)
     return compute_dtype, result_dtype
 
 
