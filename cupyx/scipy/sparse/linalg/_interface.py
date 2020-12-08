@@ -7,8 +7,8 @@ from cupyx.scipy.sparse import _util
 
 
 class LinearOperator(object):
-    """__init__(self, shape, matvec, rmatvec=None, matmat=None, dtype=None, \
-rmatmat=None)
+    """LinearOperator(self, shape, matvec, rmatvec=None, matmat=None, \
+dtype=None, rmatmat=None)
 
     Common interface for performing matrix vector products
 
